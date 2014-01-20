@@ -30,6 +30,7 @@ m = len(trainImageNames)
 #Get names of test image files
 path, dirs, testImageNames = os.walk(dataTestDir).next()
 mTest = len(testImageNames)
+testImageNames = sorted(testImageNames)
 
 #Display test image
 imageTest = '%s%s' %(dataTrainDir, '999993.jpg')
@@ -38,7 +39,6 @@ imdisplay(imageTest)
 #Define Labels
 #read file
 galaxyType = pd.read_csv('solutions_training.csv')
-
 desiredDimensions = [30, 30]
 
 #define loading and pre-processing function grayscale
@@ -54,6 +54,7 @@ def preprocessImg(name, dim1, dim2, dataDir):
 
 indexesImTrain = np.random.permutation(m)
 indexesImTest = np.random.permutation(mTest)
+testIndexes = range(m, m + mTest)
 
 #Build the sparse matrix with the preprocessed image data for both train and test data
 bigMatrix = lil_matrix((m + mTest), desiredDimensions[0] * desiredDimensions[1])
