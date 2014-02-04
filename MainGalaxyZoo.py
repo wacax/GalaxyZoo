@@ -15,6 +15,7 @@ from sklearn import preprocessing
 from sklearn import cross_validation
 from sklearn import svm
 from sklearn import metrics
+from sklearn.preprocessing import StandardScaler
 
 #Init
 
@@ -24,12 +25,21 @@ dataTestDir = '/home/wacax/Documents/Wacax/Kaggle Data Analysis/Galaxy Zoo/image
 
 #Get names of training image files
 path, dirs, trainImageNames = os.walk(dataTrainDir).next()
-m = len(trainImageNames)
-#m = 1000 #pet Train dataset
-
 #Get names of test image files
 path, dirs, testImageNames = os.walk(dataTestDir).next()
-mTest = len(testImageNames)
+
+for file in trainImageNames:
+  if not file.endswith('.jpg'):
+     trainImageNames.remove(file)
+
+for file in testImageNames:
+  if not file.endswith('.jpg'):
+     testImageNames.remove(file)
+
+#m = len(trainImageNames)
+m = 1000 #pet train dataset
+#mTest = len(testImageNames)
+mTest = 1000 #pet test dataset
 testImageNames = sorted(testImageNames)
 
 #Display test image
@@ -43,7 +53,7 @@ desiredDimensions = [30, 30]
 
 #define loading and pre-processing function grayscale
 def preprocessImg(name, dim1, dim2, dataDir):
-    imageName = '{0:s}{1:d}{2:s}'.format(dataDir, name)
+    imageName = '{0:s}{1:s}'.format(dataDir, name)
     npImage = cv2.imread(imageName)
     npImage = cv2.cvtColor(npImage, cv2.COLOR_BGR2GRAY)
     avg = np.mean(npImage.reshape(1, npImage.shape[0] * npImage.shape [1]))
@@ -52,12 +62,21 @@ def preprocessImg(name, dim1, dim2, dataDir):
     npImage = cv2.resize(npImage, (dim1, dim2))
     return(npImage.reshape(1, dim1 * dim2))
 
+#define loading and pre-processing function in color
+def preprocessImg(name, dim1, dim2, dataDir):
+    imageName = '{0:s}{1:s}'.format(dataDir, name)
+    npImage = cv2.imread(imageName)
+    vectorof255s =  np.tile(255., (npImage.shape[0], npImage.shape [1], 3))
+    npImage = np.divide(npImage, vectorof255s)
+    npImage = cv2.resize(npImage, (dim1, dim2))
+    return(npImage.reshape(1, dim1 * dim2 * 3))
+
 indexesImTrain = np.random.permutation(m)
 indexesImTest = np.random.permutation(mTest)
 testIndexes = range(m, m + mTest)
 
-#Build the sparse matrix with the preprocessed image data for both train and test data
-bigMatrix = lil_matrix((m + mTest), desiredDimensions[0] * desiredDimensions[1])
+#Init the empty matrix
+bigMatrix = np.empty(shape=(m + mTest, desiredDimensions[0] * desiredDimensions[1] * 3))
 
 someOtherNumbers = range(m)
 for i in someOtherNumbers:
@@ -67,9 +86,53 @@ someNumbers = range(mTest)
 for ii in someNumbers:
     bigMatrix[testIndexes[ii], :] = preprocessImg(testImageNames[i], desiredDimensions[0], desiredDimensions[1], dataTestDir)
 
+#compute the mean for each patch and subtracting it
+avg = np.mean(bigMatrix, 0)
+bigMatrix = bigMatrix - np.tile(avg, (bigMatrix.shape[0], 1))
+
+#Compute Sigma
+sigma = np.dot(bigMatrix, bigMatrix.transpose()) / bigMatrix.shape[1]
+
+#SVD decomposition
+U,S,V = np.linalg.svd(sigma) # SVD decomposition of sigma
+
+def anonFunOne(vector):
+    variance = 0
+    for ii in range(len(vector)):
+            variance += vector[ii]
+            if variance > 0.99:
+                componentIdx = ii
+                return(componentIdx)
+            break
+
+k = anonFunOne(S)
+epsilon = 0.01
+xRot = U.transpose() * bigMatrix             # rotated version of the data.
+xTilde = U[:, 1:k].transpose() * bigMatrix    # reduced dimension representation of the data, where k is the number of eigenvectors to keep
+
+xPCAWhite = np.diag(1./np.sqrt(np.diag(S) + epsilon)) * U.transpose() * bigMatrix
+
+#xZCAWhite = U * np.diag(1./np.sqrt(np.diag(S) + epsilon)) * U.transpose() * bigMatrix
+
+#Build the sparse matrix with the preprocessed image data for both train and test data
+#bigMatrix = lil_matrix((m + mTest), desiredDimensions[0] * desiredDimensions[1])
+
+#someOtherNumbers = range(m)
+#for i in someOtherNumbers:
+#    bigMatrix[i, :] = preprocessImg(trainImageNames[i], desiredDimensions[0], desiredDimensions[1], dataTrainDir)
+
+#someNumbers = range(mTest)
+#for ii in someNumbers:
+#    bigMatrix[testIndexes[ii], :] = preprocessImg(testImageNames[i], desiredDimensions[0], desiredDimensions[1], dataTestDir)
+
 #Transform to csr matrix and standarization
 bigMatrix = bigMatrix.tocsr()
-bigMatrix = preprocessing.scale(bigMatrix, with_mean=False)
+#scaler = StandardScaler(with_mean=False)
+#scaler.fit(bigMatrix)
+#X_train = scaler.transform(X_train)
+#X_test = scaler.transform(X_test)  # apply same transformation to test data
+
+#bigMatrix = preprocessing.scale(bigMatrix, with_mean=False)
 
 #extract features with neural nets (Restricted Boltzmann Machine)
 #RBM = BernoulliRBM(verbose = True)
