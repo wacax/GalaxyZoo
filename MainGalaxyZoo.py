@@ -91,26 +91,32 @@ avg = np.mean(bigMatrix, 0)
 bigMatrix = bigMatrix - np.tile(avg, (bigMatrix.shape[0], 1))
 
 #Compute Sigma
-sigma = np.dot(bigMatrix, bigMatrix.transpose()) / bigMatrix.shape[1]
+sigma = np.dot(bigMatrix.T, bigMatrix) / bigMatrix.shape[1]
 
 #SVD decomposition
 U,S,V = np.linalg.svd(sigma) # SVD decomposition of sigma
 
 def anonFunOne(vector):
-    variance = 0
+    sumS = np.sum(vector)
     for ii in range(len(vector)):
-            variance += vector[ii]
+            variance = np.sum(vector[0:ii]) / sumS
             if variance > 0.99:
-                componentIdx = ii
-                return(componentIdx)
-            break
+                return(ii)
+                break
 
 k = anonFunOne(S)
 epsilon = 0.01
-xRot = U.transpose() * bigMatrix             # rotated version of the data.
-xTilde = U[:, 1:k].transpose() * bigMatrix    # reduced dimension representation of the data, where k is the number of eigenvectors to keep
+#xRot = np.dot(bigMatrix, U)            # rotated version of the data.
+bigMatrix = np.dot(bigMatrix, U[:, 1:k])    # reduced dimension representation of the data, where k is the number of eigenvectors to keep
 
-xPCAWhite = np.diag(1./np.sqrt(np.diag(S) + epsilon)) * U.transpose() * bigMatrix
+D = np.diag(1./np.sqrt(np.diag(S) + epsilon))
+# whitening matrix
+W = np.dot(np.dot(U,D),U.T)
+# multiply by the whitening matrix
+bigMatrix = np.dot(bigMatrix,W)
+
+#PCA whitening
+#bigMatrix = np.dot(np.dot(bigMatrix, U), np.diag(1./np.sqrt(np.diag(S) + epsilon)))
 
 #xZCAWhite = U * np.diag(1./np.sqrt(np.diag(S) + epsilon)) * U.transpose() * bigMatrix
 
