@@ -16,6 +16,8 @@ from sklearn import cross_validation
 from sklearn import svm
 from sklearn import metrics
 from sklearn.preprocessing import StandardScaler
+from sklearn.neural_network import BernoulliRBM
+from sklearn import preprocessing
 
 #Init
 
@@ -106,14 +108,17 @@ def anonFunOne(vector):
 
 k = anonFunOne(S)
 epsilon = 0.01
-#xRot = np.dot(bigMatrix, U)            # rotated version of the data.
+#xRot = np.dot(bigMatrix, U)
+#covarianceMatrix = np.cov(np.dot(bigMatrix, U), rowvar=False)            # corr matrix of the rotated version of the data.
+#cv2.imshow("covarianceMatrix", covarianceMatrix)
+#cv2.waitKey(0)
 bigMatrix = np.dot(bigMatrix, U[:, 1:k])    # reduced dimension representation of the data, where k is the number of eigenvectors to keep
 
-D = np.diag(1./np.sqrt(np.diag(S) + epsilon))
+#D = np.diag(1./np.sqrt(np.diag(S) + epsilon))
 # whitening matrix
-W = np.dot(np.dot(U,D),U.T)
+#W = np.dot(np.dot(U,D),U.T)
 # multiply by the whitening matrix
-bigMatrix = np.dot(bigMatrix,W)
+#bigMatrix = np.dot(bigMatrix,W)
 
 #PCA whitening
 #bigMatrix = np.dot(np.dot(bigMatrix, U), np.diag(1./np.sqrt(np.diag(S) + epsilon)))
@@ -132,7 +137,7 @@ bigMatrix = np.dot(bigMatrix,W)
 #    bigMatrix[testIndexes[ii], :] = preprocessImg(testImageNames[i], desiredDimensions[0], desiredDimensions[1], dataTestDir)
 
 #Transform to csr matrix and standarization
-bigMatrix = bigMatrix.tocsr()
+#bigMatrix = bigMatrix.tocsr()
 #scaler = StandardScaler(with_mean=False)
 #scaler.fit(bigMatrix)
 #X_train = scaler.transform(X_train)
@@ -141,32 +146,18 @@ bigMatrix = bigMatrix.tocsr()
 #bigMatrix = preprocessing.scale(bigMatrix, with_mean=False)
 
 #extract features with neural nets (Restricted Boltzmann Machine)
-#RBM = BernoulliRBM(verbose = True)
-#RBM.learning_rate = 0.06
-#RBM.n_iter = 20
-#RBM.n_components = 100
-#min_max_scaler = preprocessing.MinMaxScaler()
-#RBM.fit(min_max_scaler.fit_transform((bigMatrix.todense()))
+min_max_scaler = preprocessing.MinMaxScaler(feature_range=(0, 1))
+bigMatrix = min_max_scaler.fit_transform(bigMatrix)
 
-#Reduce features to main components so that they contain 99% of variance
-pca = RandomizedPCA(n_components=250, whiten = True)
-pca.fit(bigMatrix)
-varianceExplained = pca.explained_variance_ratio_
-print(pca.explained_variance_ratio_)
-
-def anonFunOne(vector):
-    variance = 0
-    for ii in range(len(vector)):
-            variance += vector[ii]
-            if variance > 0.99:
-                return (ii)
-                break
-
-bigMatrix = pca.fit_transform(bigMatrix, y = anonFunOne(varianceExplained))
+RBM = BernoulliRBM(verbose = True)
+RBM.learning_rate = 0.05
+RBM.n_iter = 40
+RBM.n_components = 100
+RBM.fit(bigMatrix)
 
 #Divide train Matrix and Test Matrix (for which I don't have labels)
-trainMatrixReduced = bigMatrix[0:max(indexesIm), :]
-testMatrixReduced = bigMatrix[testIndexes[0]:bigMatrix.shape[0], :]
+trainMatrixReduced = bigMatrix[someOtherNumbers, :]
+testMatrixReduced = bigMatrix[testIndexes, :]
 
 #Divide dataset for cross validation purposes
 X_train, X_test, y_train, y_test = cross_validation.train_test_split(
