@@ -6,6 +6,7 @@
 #import libraries
 import os
 import cv2
+import csv
 import numpy as np
 import pandas as pd
 from webbrowser import open as imdisplay
@@ -22,8 +23,8 @@ from sklearn import preprocessing
 #Init
 
 wd = '/home/wacax/Documents/Wacax/Kaggle Data Analysis/Galaxy Zoo/'
-dataTrainDir = '/home/wacax/Documents/Wacax/Kaggle Data Analysis/Galaxy Zoo/images_training/'
-dataTestDir = '/home/wacax/Documents/Wacax/Kaggle Data Analysis/Galaxy Zoo/images_test/'
+dataTrainDir = '/home/wacax/Documents/Wacax/Kaggle Data Analysis/Galaxy Zoo/images_training_rev1/'
+dataTestDir = '/home/wacax/Documents/Wacax/Kaggle Data Analysis/Galaxy Zoo/images_test_rev1/'
 
 #Get names of training image files
 path, dirs, trainImageNames = os.walk(dataTrainDir).next()
@@ -43,14 +44,23 @@ m = 1000 #pet train dataset
 #mTest = len(testImageNames)
 mTest = 1000 #pet test dataset
 testImageNames = sorted(testImageNames)
+trainImageNames = sorted(trainImageNames)
 
 #Display test image
-imageTest = '%s%s' %(dataTrainDir, '999993.jpg')
+randImg = np.random.randint(0,len(trainImageNames))
+randImg = trainImageNames[randImg]
+imageTest = '%s%s' %(dataTrainDir, randImg)
 imdisplay(imageTest)
 
 #Define Labels
 #read file
-galaxyType = pd.read_csv('solutions_training.csv')
+galaxyType = pd.read_csv('training_solutions_rev1.csv')
+
+with open('training_solutions_rev1.csv', 'rb') as solutionsFile:
+    reader = csv.reader(solutionsFile)
+
+solutions = list(csv.reader(open("training_solutions_rev1.csv", "r")))
+
 desiredDimensions = [30, 30]
 
 #define loading and pre-processing function grayscale
@@ -72,6 +82,11 @@ def preprocessImg(name, dim1, dim2, dataDir):
     npImage = np.divide(npImage, vectorof255s)
     npImage = cv2.resize(npImage, (dim1, dim2))
     return(npImage.reshape(1, dim1 * dim2 * 3))
+
+#define sigmoid function, lazy numpy doesn't have one
+def sigmoid(X):
+    g = 1.0 / (1.0 + np.exp(-X))
+    return(g)
 
 indexesImTrain = np.random.permutation(m)
 indexesImTest = np.random.permutation(mTest)
@@ -145,23 +160,77 @@ bigMatrix = np.dot(bigMatrix, U[:, 1:k])    # reduced dimension representation o
 
 #bigMatrix = preprocessing.scale(bigMatrix, with_mean=False)
 
-#extract features with neural nets (Restricted Boltzmann Machine)
+#pre-train networks using Restricted Boltzmann Machine
+#first layer
 min_max_scaler = preprocessing.MinMaxScaler(feature_range=(0, 1))
 bigMatrix = min_max_scaler.fit_transform(bigMatrix)
 
-RBM = BernoulliRBM(verbose = True)
-RBM.learning_rate = 0.05
-RBM.n_iter = 40
-RBM.n_components = 100
-RBM.fit(bigMatrix)
+vectorOfOnes =  np.tile(1.0, (bigMatrix.shape[0], 1))
+bigMatrix = np.hstack((vectorOfOnes, bigMatrix))
+
+RBM1 = BernoulliRBM(verbose = True)
+RBM1.learning_rate = 0.05
+RBM1.n_iter = 40
+RBM1.n_components = 100
+RBM1.fit(bigMatrix)
 
 #Divide train Matrix and Test Matrix (for which I don't have labels)
 trainMatrixReduced = bigMatrix[someOtherNumbers, :]
 testMatrixReduced = bigMatrix[testIndexes, :]
 
-#Divide dataset for cross validation purposes
+#Divide training dataset for cross validation purposes
 X_train, X_test, y_train, y_test = cross_validation.train_test_split(
-    trainMatrixReduced, y[0:24999], test_size=0.4, random_state=0) #fix this
+    trainMatrixReduced, range(1000), test_size=0.4, random_state=0) #fix this
+
+ThetaHiddenOne = RBM1.components_.T
+
+hiddenOne = sigmoid(np.dot(X_train, ThetaHiddenOne))
+
+vectorOfOnes =  np.tile(1.0, (hiddenOne.shape[0], 1))
+hiddenOne = np.hstack((vectorOfOnes, hiddenOne))
+
+#second layer
+RBM2 = BernoulliRBM(verbose = True)
+RBM2.learning_rate = 0.05
+RBM2.n_iter = 40
+RBM2.n_components = 50
+RBM2.fit(hiddenOne)
+
+ThetaHiddenTwo = RBM2.components_.T
+hiddenTwo = sigmoid(np.dot(hiddenOne, ThetaHiddenTwo))
+
+vectorOfOnes =  np.tile(1.0, (hiddenTwo.shape[0], 1))
+hiddenTwo = np.hstack((vectorOfOnes, hiddenTwo))
+
+#third layer
+RBM3 = BernoulliRBM(verbose = True)
+RBM3.learning_rate = 0.05
+RBM3.n_iter = 40
+RBM3.n_components = 10
+RBM3.fit(hiddenTwo)
+
+ThetaHiddenThree = RBM3.components_.T
+
+def nnCostFunction(Theta1, Theta2, Theta3,  input_layer_size, hidden_layer_size, num_labels, X, y, NNlambda):
+    m = X.shape[0]
+    #Feedforward pass
+    hiddenOne = sigmoid(np.dot(X_train, Theta1))
+    vectorOfOnes =  np.tile(1.0, (hiddenOne.shape[0], 1))
+    hiddenOne = np.hstack((vectorOfOnes, hiddenOne))
+    hiddenTwo = sigmoid(np.dot(hiddenOne, Theta2))
+    vectorOfOnes =  np.tile(1.0, (hiddenTwo.shape[0], 1))
+    hiddenTwo = np.hstack((vectorOfOnes, hiddenTwo))
+    out = sigmoid(np.dot(hiddenTwo, Theta3))
+
+    #Backpropagation
+    #Regularization Term
+    reg = (NNlambda/(2*m))*(np.sum(np.sum(Theta1[:,2:Theta1.shape[1]].^2)) + np.sum(np.sum(Theta2[:,2:Theta1.shape[1]].^2)))
+    J = (1/m)*np.sum(np.sum(-y.*np.log(out)-(1-y)*np.log(1-out)))+ reg
+
+
+
+
+
 
 #random grid search of hiperparameters
 #create a classifier
@@ -209,7 +278,7 @@ predictionFromTest = clf.predict(testMatrixReduced)
 idVector = range(1, mTest + 1)
 
 #predictionsToCsv = np.column_stack((idVector, label))
-predictionsToCsv = np.column_stack((idVector, predictionFromTest))
+predictionsToCsv = np.column_stack(idVector, predictionFromTest)
 
 import csv
 
