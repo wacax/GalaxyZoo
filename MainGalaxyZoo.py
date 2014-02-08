@@ -214,7 +214,21 @@ RBM3.fit(hiddenTwo)
 
 ThetaHiddenThree = RBM3.components_.T
 
-def nnCostFunction(Theta1, Theta2, Theta3, input_layer_size, hidden_layer_size, num_labels, X, y, NNlambda):
+nnThetas = np.concatenate((ThetaHiddenOne.flatten(), ThetaHiddenTwo.flatten(), ThetaHiddenThree.flatten()))
+
+input_layer_size = RBM1.components_.shape[1]
+hidden1_layer_size = RBM1.n_components
+hidden2_layer_size = RBM2.n_components
+num_labels = RBM3.n_components
+
+def nnCostFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X, y, NNlambda):
+
+    Theta1 = np.reshape(nnThetas[0: input_layer_size * hidden1_layer_size], (input_layer_size, hidden1_layer_size))
+    Theta2 = np.reshape(nnThetas[input_layer_size * hidden1_layer_size : hidden1_layer_size * input_layer_size + (1 + hidden1_layer_size) * hidden2_layer_size],
+                        (1 + hidden1_layer_size, hidden2_layer_size))
+    Theta3 = np.reshape(nnThetas[len(nnThetas) - (1 + hidden2_layer_size) * num_labels : len(nnThetas)],
+                        (1 + hidden2_layer_size, num_labels))
+
     m = X.shape[0]
     #Feedforward pass
     hiddenOne = sigmoid(np.dot(X, Theta1))
@@ -250,6 +264,10 @@ def nnCostFunction(Theta1, Theta2, Theta3, input_layer_size, hidden_layer_size, 
     Theta1_grad = (np.column_stack((Theta1_grad[:, 1], Theta1_grad[:, 1:Theta1_grad.shape[1]] + reg_grad1.T))).T
     Theta2_grad = (np.column_stack((Theta2_grad[:, 1], Theta2_grad[:, 1:Theta2_grad.shape[1]] + reg_grad2.T))).T
     Theta3_grad = (np.column_stack((Theta3_grad[:, 1], Theta3_grad[:, 1:Theta3_grad.shape[1]] + reg_grad3.T))).T
+
+    grad = np.concatenate((Theta1_grad.flatten(), Theta2_grad.flatten(), Theta3_grad.flatten()))
+    return(grad)
+
 
 #random grid search of hiperparameters
 #create a classifier
