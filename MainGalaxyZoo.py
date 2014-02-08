@@ -55,11 +55,8 @@ imdisplay(imageTest)
 #Define Labels
 #read file
 galaxyType = pd.read_csv('training_solutions_rev1.csv')
-
-with open('training_solutions_rev1.csv', 'rb') as solutionsFile:
-    reader = csv.reader(solutionsFile)
-
-solutions = list(csv.reader(open("training_solutions_rev1.csv", "r")))
+y = np.array(galaxyType)
+y = y[:, 1:y.shape[1]]
 
 desiredDimensions = [30, 30]
 
@@ -87,6 +84,12 @@ def preprocessImg(name, dim1, dim2, dataDir):
 def sigmoid(X):
     g = 1.0 / (1.0 + np.exp(-X))
     return(g)
+
+#define sigmoid gradient
+def sigmoidGradient(z):
+    g = sigmoid(z) * (1-sigmoid(z))
+    return(g)
+
 
 indexesImTrain = np.random.permutation(m)
 indexesImTest = np.random.permutation(mTest)
@@ -206,15 +209,15 @@ hiddenTwo = np.hstack((vectorOfOnes, hiddenTwo))
 RBM3 = BernoulliRBM(verbose = True)
 RBM3.learning_rate = 0.05
 RBM3.n_iter = 40
-RBM3.n_components = 10
+RBM3.n_components = 37
 RBM3.fit(hiddenTwo)
 
 ThetaHiddenThree = RBM3.components_.T
 
-def nnCostFunction(Theta1, Theta2, Theta3,  input_layer_size, hidden_layer_size, num_labels, X, y, NNlambda):
+def nnCostFunction(Theta1, Theta2, Theta3, input_layer_size, hidden_layer_size, num_labels, X, y, NNlambda):
     m = X.shape[0]
     #Feedforward pass
-    hiddenOne = sigmoid(np.dot(X_train, Theta1))
+    hiddenOne = sigmoid(np.dot(X, Theta1))
     vectorOfOnes =  np.tile(1.0, (hiddenOne.shape[0], 1))
     hiddenOne = np.hstack((vectorOfOnes, hiddenOne))
     hiddenTwo = sigmoid(np.dot(hiddenOne, Theta2))
@@ -222,15 +225,31 @@ def nnCostFunction(Theta1, Theta2, Theta3,  input_layer_size, hidden_layer_size,
     hiddenTwo = np.hstack((vectorOfOnes, hiddenTwo))
     out = sigmoid(np.dot(hiddenTwo, Theta3))
 
-    #Backpropagation
     #Regularization Term
-    reg = (NNlambda/(2*m))*(np.sum(np.sum(Theta1[:,2:Theta1.shape[1]].^2)) + np.sum(np.sum(Theta2[:,2:Theta1.shape[1]].^2)))
-    J = (1/m)*np.sum(np.sum(-y.*np.log(out)-(1-y)*np.log(1-out)))+ reg
+    reg = (NNlambda/(2*m))*(np.sum(np.square(np.sum(Theta1[1:Theta1.shape[0], :], 0))) + np.sum(np.square(np.sum(Theta2[1:Theta2.shape[0], :], 0))) + np.sum(np.square(np.sum(Theta3[1:Theta3.shape[0], :], 0))))
+    #Cost Function
+    J = (1.0/m) * np.sum(np.sum(-y * np.log(out)-(1.0-y) * np.log(1.0-out), 0)) + reg
+    return(J)
+
+    delta4 = out - y
+    delta4_Theta3 = np.dot(delta4, Theta3.T)
+    delta3 = delta4_Theta3[:, 1:delta4_Theta3.shape[1]] * sigmoidGradient(np.dot(hiddenOne,Theta2))
+    delta3_Theta2 = np.dot(delta3, Theta2.T)
+    delta2 = delta3_Theta2[:, 1:delta3_Theta2.shape[1]] * sigmoidGradient(np.dot(X,Theta1))
+
+    #Regularization term of the gradient
+    reg_grad1 = (NNlambda/m) * Theta1[1:Theta1.shape[0], :]
+    reg_grad2 = (NNlambda/m) * Theta2[1:Theta2.shape[0], :]
+    reg_grad3 = (NNlambda/m) * Theta3[1:Theta3.shape[0], :]
+
+    Theta1_grad = (1.0/m) * (np.dot(delta2.T, X))
+    Theta2_grad = (1.0/m) * (np.dot(delta3.T, hiddenOne))
+    Theta3_grad = (1.0/m) * (np.dot(delta4.T, hiddenTwo))
 
 
-
-
-
+    Theta1_grad = (np.column_stack((Theta1_grad[:, 1], Theta1_grad[:, 1:Theta1_grad.shape[1]] + reg_grad1.T))).T
+    Theta2_grad = (np.column_stack((Theta2_grad[:, 1], Theta2_grad[:, 1:Theta2_grad.shape[1]] + reg_grad2.T))).T
+    Theta3_grad = (np.column_stack((Theta3_grad[:, 1], Theta3_grad[:, 1:Theta3_grad.shape[1]] + reg_grad3.T))).T
 
 #random grid search of hiperparameters
 #create a classifier
