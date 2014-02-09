@@ -19,6 +19,7 @@ from sklearn import metrics
 from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import BernoulliRBM
 from sklearn import preprocessing
+from scipy import optimize
 
 #Init
 
@@ -40,9 +41,9 @@ for file in testImageNames:
      testImageNames.remove(file)
 
 #m = len(trainImageNames)
-m = 1000 #pet train dataset
+m = 200 #pet train dataset
 #mTest = len(testImageNames)
-mTest = 1000 #pet test dataset
+mTest = 200 #pet test dataset
 testImageNames = sorted(testImageNames)
 trainImageNames = sorted(trainImageNames)
 
@@ -183,7 +184,7 @@ testMatrixReduced = bigMatrix[testIndexes, :]
 
 #Divide training dataset for cross validation purposes
 X_train, X_test, y_train, y_test = cross_validation.train_test_split(
-    trainMatrixReduced, range(1000), test_size=0.4, random_state=0) #fix this
+    trainMatrixReduced, y[0:m, :], test_size=0.4, random_state=0)
 
 ThetaHiddenOne = RBM1.components_.T
 
@@ -220,7 +221,9 @@ input_layer_size = RBM1.components_.shape[1]
 hidden1_layer_size = RBM1.n_components
 hidden2_layer_size = RBM2.n_components
 num_labels = RBM3.n_components
+NNlambda = 1
 
+#define Cost Function
 def nnCostFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X, y, NNlambda):
 
     Theta1 = np.reshape(nnThetas[0: input_layer_size * hidden1_layer_size], (input_layer_size, hidden1_layer_size))
@@ -245,6 +248,25 @@ def nnCostFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer
     J = (1.0/m) * np.sum(np.sum(-y * np.log(out)-(1.0-y) * np.log(1.0-out), 0)) + reg
     return(J)
 
+#define Gradient
+def nnGradFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X, y, NNlambda):
+
+    Theta1 = np.reshape(nnThetas[0: input_layer_size * hidden1_layer_size], (input_layer_size, hidden1_layer_size))
+    Theta2 = np.reshape(nnThetas[input_layer_size * hidden1_layer_size : hidden1_layer_size * input_layer_size + (1 + hidden1_layer_size) * hidden2_layer_size],
+                        (1 + hidden1_layer_size, hidden2_layer_size))
+    Theta3 = np.reshape(nnThetas[len(nnThetas) - (1 + hidden2_layer_size) * num_labels : len(nnThetas)],
+                        (1 + hidden2_layer_size, num_labels))
+
+    m = X.shape[0]
+    #Feedforward pass
+    hiddenOne = sigmoid(np.dot(X, Theta1))
+    vectorOfOnes =  np.tile(1.0, (hiddenOne.shape[0], 1))
+    hiddenOne = np.hstack((vectorOfOnes, hiddenOne))
+    hiddenTwo = sigmoid(np.dot(hiddenOne, Theta2))
+    vectorOfOnes =  np.tile(1.0, (hiddenTwo.shape[0], 1))
+    hiddenTwo = np.hstack((vectorOfOnes, hiddenTwo))
+    out = sigmoid(np.dot(hiddenTwo, Theta3))
+
     delta4 = out - y
     delta4_Theta3 = np.dot(delta4, Theta3.T)
     delta3 = delta4_Theta3[:, 1:delta4_Theta3.shape[1]] * sigmoidGradient(np.dot(hiddenOne,Theta2))
@@ -268,6 +290,20 @@ def nnCostFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer
     grad = np.concatenate((Theta1_grad.flatten(), Theta2_grad.flatten(), Theta3_grad.flatten()))
     return(grad)
 
+#Short Cut functions
+def costRun(theta):
+    return nnCostFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X_train, y_train, NNlambda)
+
+def gradientRun(theta):
+    return nnGradFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X_train, y_train, NNlambda)
+
+#Optimization
+#thetaOptimized = optimize.fmin_bfgs(costRun, nnThetas, gradientRun, disp=True, maxiter=400, full_output = True, retall=True)
+thetaOptimized = optimize.fmin_bfgs(costRun, nnThetas, disp=True, maxiter=400, full_output = True, retall=True)
+
+
+#theta = optimize.fmin_bfgs(nnCostFunction, x0 = initial_values, fprime =  nnGradFunction, args=myargs, disp = True, retall= True)
+#theta = optimize.fmin_bfgs(nnCostFunction, x0 = initial_values, disp = True, retall= True)
 
 #random grid search of hiperparameters
 #create a classifier
