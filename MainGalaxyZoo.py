@@ -291,19 +291,19 @@ def nnGradFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer
     return(grad)
 
 #Short Cut functions
-def costRun(theta):
-    return nnCostFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X_train, y_train, NNlambda)
+#def costRun(theta):
+#    return nnCostFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X_train, y_train, NNlambda)
 
-def gradientRun(theta):
-    return nnGradFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X_train, y_train, NNlambda)
+#def gradientRun(theta):
+#    return nnGradFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X_train, y_train, NNlambda)
 
 #Optimization
 #thetaOptimized = optimize.fmin_bfgs(costRun, nnThetas, gradientRun, disp=True, maxiter=400, full_output = True, retall=True)
-thetaOptimized = optimize.fmin_bfgs(costRun, nnThetas, disp=True, maxiter=400, full_output = True, retall=True)
+#thetaOptimized = optimize.fmin_bfgs(costRun, nnThetas, disp=True, maxiter=400, full_output = True, retall=True)
 
-
-#theta = optimize.fmin_bfgs(nnCostFunction, x0 = initial_values, fprime =  nnGradFunction, args=myargs, disp = True, retall= True)
-#theta = optimize.fmin_bfgs(nnCostFunction, x0 = initial_values, disp = True, retall= True)
+arguments = (input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X_train, y_train, NNlambda)
+#theta = optimize.fmin_bfgs(nnCostFunction, x0 = nnThetas, fprime =  nnGradFunction, args=myargs, disp = True, retall= True)
+theta = optimize.fmin_bfgs(nnCostFunction, x0 = nnThetas, disp = True, retall= True)
 
 #random grid search of hiperparameters
 #create a classifier
