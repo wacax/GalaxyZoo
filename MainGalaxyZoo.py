@@ -11,15 +11,12 @@ import numpy as np
 import pandas as pd
 from webbrowser import open as imdisplay
 from scipy.sparse import lil_matrix
-from sklearn.decomposition import RandomizedPCA
-from sklearn import preprocessing
 from sklearn import cross_validation
-from sklearn import svm
-from sklearn import metrics
-from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import BernoulliRBM
 from sklearn import preprocessing
 from scipy import optimize
+from sklearn.metrics import mean_squared_error
+from math import floor, ceil
 
 #Init
 
@@ -41,9 +38,9 @@ for file in testImageNames:
      testImageNames.remove(file)
 
 #m = len(trainImageNames)
-m = 200 #pet train dataset
+m = 8000 #pet train dataset
 #mTest = len(testImageNames)
-mTest = 200 #pet test dataset
+mTest = 8000 #pet test dataset
 testImageNames = sorted(testImageNames)
 trainImageNames = sorted(trainImageNames)
 
@@ -282,7 +279,6 @@ def nnGradFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer
     Theta2_grad = (1.0/m) * (np.dot(delta3.T, hiddenOne))
     Theta3_grad = (1.0/m) * (np.dot(delta4.T, hiddenTwo))
 
-
     Theta1_grad = (np.column_stack((Theta1_grad[:, 1], Theta1_grad[:, 1:Theta1_grad.shape[1]] + reg_grad1.T))).T
     Theta2_grad = (np.column_stack((Theta2_grad[:, 1], Theta2_grad[:, 1:Theta2_grad.shape[1]] + reg_grad2.T))).T
     Theta3_grad = (np.column_stack((Theta3_grad[:, 1], Theta3_grad[:, 1:Theta3_grad.shape[1]] + reg_grad3.T))).T
@@ -290,70 +286,45 @@ def nnGradFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer
     grad = np.concatenate((Theta1_grad.flatten(), Theta2_grad.flatten(), Theta3_grad.flatten()))
     return(grad)
 
-#Short Cut functions
-#def costRun(theta):
-#    return nnCostFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X_train, y_train, NNlambda)
-
-#def gradientRun(theta):
-#    return nnGradFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X_train, y_train, NNlambda)
-
+#mini-batch learning with either L-BFGS or Conjugate gradient
 #Optimization
-#thetaOptimized = optimize.fmin_bfgs(costRun, nnThetas, gradientRun, disp=True, maxiter=400, full_output = True, retall=True)
-#thetaOptimized = optimize.fmin_bfgs(costRun, nnThetas, disp=True, maxiter=400, full_output = True, retall=True)
+theta = nnThetas
+counter = 0
+numberOfIterations = range(m / 1000)
+for i in numberOfIterations:
+    values2Train = range(counter, counter + 1000)
+    counter = np.max(values2Train) + 1
 
-arguments = (input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X_train, y_train, NNlambda)
-#theta = optimize.fmin_bfgs(nnCostFunction, x0 = nnThetas, fprime =  nnGradFunction, args=myargs, disp = True, retall= True)
-theta = optimize.fmin_bfgs(nnCostFunction, x0 = nnThetas, disp = True, retall= True)
+    while X_train.shape[0] <= np.max(values2Train):
+        values2Train.remove(values2Train[-1])
 
-#random grid search of hiperparameters
-#create a classifier
-clf = svm.SVC(verbose = True)
+    arguments = (input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X_train[values2Train, :], y_train[values2Train, :], NNlambda)
+    theta = optimize.fmin_l_bfgs_b(nnCostFunction, x0 = theta, fprime =  nnGradFunction, args = arguments, maxiter = 20, disp = True, iprint = 0 )
+    #theta = optimize.fmin_cg(nnCostFunction, x0 = nnThetas, fprime = nnGradFunction, args = arguments, maxiter = 3, disp = True, retall= True )
 
-# specify parameters and distributions to sample from
-params2Test = {'C': [1, 3, 10, 30, 100, 300], 'gamma': [0.001], 'kernel': ['rbf']}
+    theta = np.array(theta[0])
 
-#run randomized search
-grid_search = GridSearchCV(clf, param_grid = params2Test)
+#prediction probability and RMSE score
+Theta1 = np.reshape(theta[0: input_layer_size * hidden1_layer_size], (input_layer_size, hidden1_layer_size))
+Theta2 = np.reshape(theta[input_layer_size * hidden1_layer_size : hidden1_layer_size * input_layer_size + (1 + hidden1_layer_size) * hidden2_layer_size],
+                        (1 + hidden1_layer_size, hidden2_layer_size))
+Theta3 = np.reshape(theta[len(nnThetas) - (1 + hidden2_layer_size) * num_labels : len(nnThetas)],
+                        (1 + hidden2_layer_size, num_labels))
 
-start = time()
-grid_search.fit(trainMatrixReduced, y[0:24999])
-print("GridSearchCV took %.2f seconds for %d candidate parameter settings." % (time() - start, len(grid_search.grid_scores_)))
-type(grid_search)
-grid_search.grid_scores_
+m = X_test.shape[0]
+#Feedforward pass
+hiddenOne = sigmoid(np.dot(X_test, Theta1))
+vectorOfOnes =  np.tile(1.0, (hiddenOne.shape[0], 1))
+hiddenOne = np.hstack((vectorOfOnes, hiddenOne))
+hiddenTwo = sigmoid(np.dot(hiddenOne, Theta2))
+vectorOfOnes =  np.tile(1.0, (hiddenTwo.shape[0], 1))
+hiddenTwo = np.hstack((vectorOfOnes, hiddenTwo))
+predictionFromNets = sigmoid(np.dot(hiddenTwo, Theta3))
 
-#Machine Learning part
-#Support vector machine model
-clf.fit(X_train, y_train)
+RMSE = np.sqrt(mean_squared_error(y_test, predictionFromNets))
 
-#prediction
-predictionFromDataset = clf.predict(X_test)
-
-correctValues = sum(predictionFromDataset == y_test)
-percentage = float(correctValues)/len(y_test)
-
-print(percentage)
-
-#prediction probability
-predictionFromDataset2 = clf.predict_proba(X_test)
-predictionFromDataset2 = predictionFromDataset2[:, 1]
-fpr, tpr, thresholds = metrics.roc_curve(y_test, predictionFromDataset2)
-predictionProbability = metrics.auc(fpr, tpr)
-
-#Predict images from the test set
-#Train the model with full data set
-clf = svm.SVC(C = 10, gamma = 0.001, kernel= 'rbf',verbose = True)
-clf.fit(trainMatrixReduced, y[0:24999]) #fix this
-
-#Prediction
-#predictionFromTest = clf.predict_proba(testMatrixReduced)
-predictionFromTest = clf.predict(testMatrixReduced)
-#label = predictionFromTest[:, 1]
 idVector = range(1, mTest + 1)
-
-#predictionsToCsv = np.column_stack((idVector, label))
-predictionsToCsv = np.column_stack(idVector, predictionFromTest)
-
-import csv
+predictionsToCsv = np.column_stack(idVector, predictionFromNets)
 
 ofile = open('predictionVII.csv', "wb")
 fileToBeWritten = csv.writer(ofile, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL)
