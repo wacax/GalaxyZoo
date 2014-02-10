@@ -290,7 +290,7 @@ def nnGradFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer
 #Optimization
 theta = nnThetas
 counter = 0
-numberOfIterations = range(m / 1000)
+numberOfIterations = range(int(ceil(X_train.shape[0] / 1000.0)))
 for i in numberOfIterations:
     values2Train = range(counter, counter + 1000)
     counter = np.max(values2Train) + 1
@@ -322,6 +322,7 @@ hiddenTwo = np.hstack((vectorOfOnes, hiddenTwo))
 predictionFromNets = sigmoid(np.dot(hiddenTwo, Theta3))
 
 RMSE = np.sqrt(mean_squared_error(y_test, predictionFromNets))
+print(RMSE)
 
 idVector = range(1, mTest + 1)
 predictionsToCsv = np.column_stack(idVector, predictionFromNets)
