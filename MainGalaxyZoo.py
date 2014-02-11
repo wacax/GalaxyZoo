@@ -234,12 +234,12 @@ for i in numberOfIterations:
 
 
 #First prediction
-predictionTest = predictionFromNNs(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X_test)
+predictionTest = predictionFromNNs(theta, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X_test)
 #RMSE score
 RMSE = np.sqrt(mean_squared_error(y_test, predictionTest))
 print(RMSE)
 
-predictionMatrix = predictionFromNNs(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, testMatrixReduced)
+predictionMatrix = predictionFromNNs(theta, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, testMatrixReduced)
 
 galaxyID = []
 for file in testImageNames:
