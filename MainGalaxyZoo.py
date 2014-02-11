@@ -16,7 +16,11 @@ from sklearn.neural_network import BernoulliRBM
 from sklearn import preprocessing
 from scipy import optimize
 from sklearn.metrics import mean_squared_error
-from math import floor, ceil
+from math import ceil
+from sigmoidFun import sigmoid
+from NNCostFun import nnCostFunction
+from NNGradientFun import nnGradFunction
+from NNpredictionFun import predictionFromNNs
 
 #Init
 
@@ -38,9 +42,9 @@ for file in testImageNames:
      testImageNames.remove(file)
 
 #m = len(trainImageNames)
-m = 8000 #pet train dataset
-#mTest = len(testImageNames)
-mTest = 8000 #pet test dataset
+m = 15000 #pet train dataset
+mTest = len(testImageNames)
+#mTest = 15000 #pet test dataset
 testImageNames = sorted(testImageNames)
 trainImageNames = sorted(trainImageNames)
 
@@ -77,16 +81,6 @@ def preprocessImg(name, dim1, dim2, dataDir):
     npImage = np.divide(npImage, vectorof255s)
     npImage = cv2.resize(npImage, (dim1, dim2))
     return(npImage.reshape(1, dim1 * dim2 * 3))
-
-#define sigmoid function, lazy numpy doesn't have one
-def sigmoid(X):
-    g = 1.0 / (1.0 + np.exp(-X))
-    return(g)
-
-#define sigmoid gradient
-def sigmoidGradient(z):
-    g = sigmoid(z) * (1-sigmoid(z))
-    return(g)
 
 
 indexesImTrain = np.random.permutation(m)
@@ -170,9 +164,9 @@ vectorOfOnes =  np.tile(1.0, (bigMatrix.shape[0], 1))
 bigMatrix = np.hstack((vectorOfOnes, bigMatrix))
 
 RBM1 = BernoulliRBM(verbose = True)
-RBM1.learning_rate = 0.05
-RBM1.n_iter = 40
-RBM1.n_components = 100
+RBM1.learning_rate = 0.01
+RBM1.n_iter = 20
+RBM1.n_components = 200
 RBM1.fit(bigMatrix)
 
 #Divide train Matrix and Test Matrix (for which I don't have labels)
@@ -181,7 +175,7 @@ testMatrixReduced = bigMatrix[testIndexes, :]
 
 #Divide training dataset for cross validation purposes
 X_train, X_test, y_train, y_test = cross_validation.train_test_split(
-    trainMatrixReduced, y[0:m, :], test_size=0.4, random_state=0)
+    trainMatrixReduced, y[0:trainMatrixReduced.shape[0], :], test_size=0.4, random_state=0)
 
 ThetaHiddenOne = RBM1.components_.T
 
@@ -194,7 +188,7 @@ hiddenOne = np.hstack((vectorOfOnes, hiddenOne))
 RBM2 = BernoulliRBM(verbose = True)
 RBM2.learning_rate = 0.05
 RBM2.n_iter = 40
-RBM2.n_components = 50
+RBM2.n_components = 100
 RBM2.fit(hiddenOne)
 
 ThetaHiddenTwo = RBM2.components_.T
@@ -205,7 +199,7 @@ hiddenTwo = np.hstack((vectorOfOnes, hiddenTwo))
 
 #third layer
 RBM3 = BernoulliRBM(verbose = True)
-RBM3.learning_rate = 0.05
+RBM3.learning_rate = 0.01
 RBM3.n_iter = 40
 RBM3.n_components = 37
 RBM3.fit(hiddenTwo)
@@ -220,79 +214,14 @@ hidden2_layer_size = RBM2.n_components
 num_labels = RBM3.n_components
 NNlambda = 1
 
-#define Cost Function
-def nnCostFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X, y, NNlambda):
-
-    Theta1 = np.reshape(nnThetas[0: input_layer_size * hidden1_layer_size], (input_layer_size, hidden1_layer_size))
-    Theta2 = np.reshape(nnThetas[input_layer_size * hidden1_layer_size : hidden1_layer_size * input_layer_size + (1 + hidden1_layer_size) * hidden2_layer_size],
-                        (1 + hidden1_layer_size, hidden2_layer_size))
-    Theta3 = np.reshape(nnThetas[len(nnThetas) - (1 + hidden2_layer_size) * num_labels : len(nnThetas)],
-                        (1 + hidden2_layer_size, num_labels))
-
-    m = X.shape[0]
-    #Feedforward pass
-    hiddenOne = sigmoid(np.dot(X, Theta1))
-    vectorOfOnes =  np.tile(1.0, (hiddenOne.shape[0], 1))
-    hiddenOne = np.hstack((vectorOfOnes, hiddenOne))
-    hiddenTwo = sigmoid(np.dot(hiddenOne, Theta2))
-    vectorOfOnes =  np.tile(1.0, (hiddenTwo.shape[0], 1))
-    hiddenTwo = np.hstack((vectorOfOnes, hiddenTwo))
-    out = sigmoid(np.dot(hiddenTwo, Theta3))
-
-    #Regularization Term
-    reg = (NNlambda/(2*m))*(np.sum(np.square(np.sum(Theta1[1:Theta1.shape[0], :], 0))) + np.sum(np.square(np.sum(Theta2[1:Theta2.shape[0], :], 0))) + np.sum(np.square(np.sum(Theta3[1:Theta3.shape[0], :], 0))))
-    #Cost Function
-    J = (1.0/m) * np.sum(np.sum(-y * np.log(out)-(1.0-y) * np.log(1.0-out), 0)) + reg
-    return(J)
-
-#define Gradient
-def nnGradFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X, y, NNlambda):
-
-    Theta1 = np.reshape(nnThetas[0: input_layer_size * hidden1_layer_size], (input_layer_size, hidden1_layer_size))
-    Theta2 = np.reshape(nnThetas[input_layer_size * hidden1_layer_size : hidden1_layer_size * input_layer_size + (1 + hidden1_layer_size) * hidden2_layer_size],
-                        (1 + hidden1_layer_size, hidden2_layer_size))
-    Theta3 = np.reshape(nnThetas[len(nnThetas) - (1 + hidden2_layer_size) * num_labels : len(nnThetas)],
-                        (1 + hidden2_layer_size, num_labels))
-
-    m = X.shape[0]
-    #Feedforward pass
-    hiddenOne = sigmoid(np.dot(X, Theta1))
-    vectorOfOnes =  np.tile(1.0, (hiddenOne.shape[0], 1))
-    hiddenOne = np.hstack((vectorOfOnes, hiddenOne))
-    hiddenTwo = sigmoid(np.dot(hiddenOne, Theta2))
-    vectorOfOnes =  np.tile(1.0, (hiddenTwo.shape[0], 1))
-    hiddenTwo = np.hstack((vectorOfOnes, hiddenTwo))
-    out = sigmoid(np.dot(hiddenTwo, Theta3))
-
-    delta4 = out - y
-    delta4_Theta3 = np.dot(delta4, Theta3.T)
-    delta3 = delta4_Theta3[:, 1:delta4_Theta3.shape[1]] * sigmoidGradient(np.dot(hiddenOne,Theta2))
-    delta3_Theta2 = np.dot(delta3, Theta2.T)
-    delta2 = delta3_Theta2[:, 1:delta3_Theta2.shape[1]] * sigmoidGradient(np.dot(X,Theta1))
-
-    #Regularization term of the gradient
-    reg_grad1 = (NNlambda/m) * Theta1[1:Theta1.shape[0], :]
-    reg_grad2 = (NNlambda/m) * Theta2[1:Theta2.shape[0], :]
-    reg_grad3 = (NNlambda/m) * Theta3[1:Theta3.shape[0], :]
-
-    Theta1_grad = (1.0/m) * (np.dot(delta2.T, X))
-    Theta2_grad = (1.0/m) * (np.dot(delta3.T, hiddenOne))
-    Theta3_grad = (1.0/m) * (np.dot(delta4.T, hiddenTwo))
-
-    Theta1_grad = (np.column_stack((Theta1_grad[:, 1], Theta1_grad[:, 1:Theta1_grad.shape[1]] + reg_grad1.T))).T
-    Theta2_grad = (np.column_stack((Theta2_grad[:, 1], Theta2_grad[:, 1:Theta2_grad.shape[1]] + reg_grad2.T))).T
-    Theta3_grad = (np.column_stack((Theta3_grad[:, 1], Theta3_grad[:, 1:Theta3_grad.shape[1]] + reg_grad3.T))).T
-
-    grad = np.concatenate((Theta1_grad.flatten(), Theta2_grad.flatten(), Theta3_grad.flatten()))
-    return(grad)
-
 #mini-batch learning with either L-BFGS or Conjugate gradient
 #Optimization
+miniBatchSize = 1000.0
 theta = nnThetas
 counter = 0
-numberOfIterations = range(int(ceil(X_train.shape[0] / 1000.0)))
+numberOfIterations = range(int(ceil(X_train.shape[0] / miniBatchSize)))
 for i in numberOfIterations:
-    values2Train = range(counter, counter + 1000)
+    values2Train = range(counter, counter + int(miniBatchSize))
     counter = np.max(values2Train) + 1
 
     while X_train.shape[0] <= np.max(values2Train):
@@ -301,36 +230,30 @@ for i in numberOfIterations:
     arguments = (input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X_train[values2Train, :], y_train[values2Train, :], NNlambda)
     theta = optimize.fmin_l_bfgs_b(nnCostFunction, x0 = theta, fprime =  nnGradFunction, args = arguments, maxiter = 20, disp = True, iprint = 0 )
     #theta = optimize.fmin_cg(nnCostFunction, x0 = nnThetas, fprime = nnGradFunction, args = arguments, maxiter = 3, disp = True, retall= True )
-
     theta = np.array(theta[0])
 
-#prediction probability and RMSE score
-Theta1 = np.reshape(theta[0: input_layer_size * hidden1_layer_size], (input_layer_size, hidden1_layer_size))
-Theta2 = np.reshape(theta[input_layer_size * hidden1_layer_size : hidden1_layer_size * input_layer_size + (1 + hidden1_layer_size) * hidden2_layer_size],
-                        (1 + hidden1_layer_size, hidden2_layer_size))
-Theta3 = np.reshape(theta[len(nnThetas) - (1 + hidden2_layer_size) * num_labels : len(nnThetas)],
-                        (1 + hidden2_layer_size, num_labels))
 
-m = X_test.shape[0]
-#Feedforward pass
-hiddenOne = sigmoid(np.dot(X_test, Theta1))
-vectorOfOnes =  np.tile(1.0, (hiddenOne.shape[0], 1))
-hiddenOne = np.hstack((vectorOfOnes, hiddenOne))
-hiddenTwo = sigmoid(np.dot(hiddenOne, Theta2))
-vectorOfOnes =  np.tile(1.0, (hiddenTwo.shape[0], 1))
-hiddenTwo = np.hstack((vectorOfOnes, hiddenTwo))
-predictionFromNets = sigmoid(np.dot(hiddenTwo, Theta3))
-
-RMSE = np.sqrt(mean_squared_error(y_test, predictionFromNets))
+#First prediction
+predictionTest = predictionFromNNs(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X_test)
+#RMSE score
+RMSE = np.sqrt(mean_squared_error(y_test, predictionTest))
 print(RMSE)
 
-idVector = range(1, mTest + 1)
-predictionsToCsv = np.column_stack(idVector, predictionFromNets)
+predictionMatrix = predictionFromNNs(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, testMatrixReduced)
 
-ofile = open('predictionVII.csv', "wb")
-fileToBeWritten = csv.writer(ofile, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL)
+galaxyID = []
+for file in testImageNames:
+    galaxyID.append(file.replace('.jpg', ''))
 
-for row in predictionsToCsv:
+predictionMatrix = np.column_stack((galaxyID, predictionMatrix))
+
+nameColumns = list(galaxyType.columns)
+predictionMatrix = np.row_stack((nameColumns, predictionMatrix))
+
+ofile = open('predictionI.csv', "wb")
+fileToBeWritten = csv.writer(ofile, delimiter=',')
+
+for row in predictionMatrix:
     fileToBeWritten.writerow(row)
 
 ofile.close()
