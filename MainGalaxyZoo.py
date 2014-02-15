@@ -9,6 +9,7 @@ import cv2
 import csv
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from webbrowser import open as imdisplay
 from scipy.sparse import lil_matrix
 from sklearn import cross_validation
@@ -21,6 +22,7 @@ from sigmoidFun import sigmoid
 from NNCostFun import nnCostFunction
 from NNGradientFun import nnGradFunction
 from NNpredictionFun import predictionFromNNs
+from checkNNGradients import checkNNGradients
 
 #Init
 
@@ -42,9 +44,9 @@ for file in testImageNames:
      testImageNames.remove(file)
 
 #m = len(trainImageNames)
-m = 15000 #pet train dataset
-mTest = len(testImageNames)
-#mTest = 15000 #pet test dataset
+m = 3000 #pet train dataset
+#mTest = len(testImageNames)
+mTest = 3000 #pet test dataset
 testImageNames = sorted(testImageNames)
 trainImageNames = sorted(trainImageNames)
 
@@ -97,6 +99,16 @@ for i in someOtherNumbers:
 someNumbers = range(mTest)
 for ii in someNumbers:
     bigMatrix[testIndexes[ii], :] = preprocessImg(testImageNames[i], desiredDimensions[0], desiredDimensions[1], dataTestDir)
+
+#show raw images
+randImgIds = np.random.randint(0, bigMatrix.shape[0], 9)
+for i in range(1, len(randImgIds)+1):
+    imageFile = np.reshape(bigMatrix[randImgIds[i-1], :], (desiredDimensions[0], desiredDimensions[1], 3))
+    location = int('{0:d}{1:d}{2:d}'.format(3, 3, i))
+    plt.subplot(location), plt.imshow(imageFile), plt.title(randImgIds[i-1])
+
+plt.show()
+
 
 #compute the mean for each patch and subtracting it
 avg = np.mean(bigMatrix, 0)
@@ -206,6 +218,7 @@ RBM3.fit(hiddenTwo)
 
 ThetaHiddenThree = RBM3.components_.T
 
+#Unroll Parameters
 nnThetas = np.concatenate((ThetaHiddenOne.flatten(), ThetaHiddenTwo.flatten(), ThetaHiddenThree.flatten()))
 
 input_layer_size = RBM1.components_.shape[1]
@@ -213,6 +226,10 @@ hidden1_layer_size = RBM1.n_components
 hidden2_layer_size = RBM2.n_components
 num_labels = RBM3.n_components
 NNlambda = 1
+
+#compute Numerical Gradient
+#Check gradients by running checkNNGradients
+checkNNGradients(NNlambda)
 
 #mini-batch learning with either L-BFGS or Conjugate gradient
 #Optimization
