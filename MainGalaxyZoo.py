@@ -1,5 +1,5 @@
 #Galaxy Zoo Kaggle competition
-#ver 1.0
+#ver 2.0
 #__author__ = 'wacax'
 
 #Libraries
@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from webbrowser import open as imdisplay
+from sklearn.decomposition import RandomizedPCA
 from scipy.sparse import lil_matrix
 from sklearn import cross_validation
 from sklearn.neural_network import BernoulliRBM
@@ -44,7 +45,7 @@ for file in testImageNames:
      testImageNames.remove(file)
 
 #m = len(trainImageNames)
-m = 3000 #pet train dataset
+m = 5000 #pet train dataset
 #mTest = len(testImageNames)
 mTest = 3000 #pet test dataset
 testImageNames = sorted(testImageNames)
@@ -65,7 +66,7 @@ y = y[:, 1:y.shape[1]]
 desiredDimensions = [30, 30]
 
 #define loading and pre-processing function grayscale
-def preprocessImg(name, dim1, dim2, dataDir):
+def preprocessImgGray(name, dim1, dim2, dataDir):
     imageName = '{0:s}{1:s}'.format(dataDir, name)
     npImage = cv2.imread(imageName)
     npImage = cv2.cvtColor(npImage, cv2.COLOR_BGR2GRAY)
@@ -100,7 +101,7 @@ someNumbers = range(mTest)
 for ii in someNumbers:
     bigMatrix[testIndexes[ii], :] = preprocessImg(testImageNames[i], desiredDimensions[0], desiredDimensions[1], dataTestDir)
 
-#show raw images
+#display raw images
 randImgIds = np.random.randint(0, bigMatrix.shape[0], 9)
 for i in range(1, len(randImgIds)+1):
     imageFile = np.reshape(bigMatrix[randImgIds[i-1], :], (desiredDimensions[0], desiredDimensions[1], 3))
@@ -109,17 +110,17 @@ for i in range(1, len(randImgIds)+1):
 
 plt.show()
 
-
 #compute the mean for each patch and subtracting it
-avg = np.mean(bigMatrix, 0)
-bigMatrix = bigMatrix - np.tile(avg, (bigMatrix.shape[0], 1))
+bigMatrix = preprocessing.scale(bigMatrix)
+
+#calculate number of components to retain 99% of variance
+#Extract around 10000 samples and calculate the 99% of variance on a small dataset
+randIndexes = np.random.randint(0, bigMatrix.shape[0], np.floor(bigMatrix.shape[0] / 7.0))
 
 #Compute Sigma
-sigma = np.dot(bigMatrix.T, bigMatrix) / bigMatrix.shape[1]
-
+sigma = np.dot(bigMatrix[randIndexes, :].T, bigMatrix[randIndexes, :]) / bigMatrix[randIndexes, :].shape[1]
 #SVD decomposition
 U,S,V = np.linalg.svd(sigma) # SVD decomposition of sigma
-
 def anonFunOne(vector):
     sumS = np.sum(vector)
     for ii in range(len(vector)):
@@ -127,45 +128,19 @@ def anonFunOne(vector):
             if variance > 0.99:
                 return(ii)
                 break
+k = anonFunOne(S) + 100
 
-k = anonFunOne(S)
-epsilon = 0.01
-#xRot = np.dot(bigMatrix, U)
-#covarianceMatrix = np.cov(np.dot(bigMatrix, U), rowvar=False)            # corr matrix of the rotated version of the data.
-#cv2.imshow("covarianceMatrix", covarianceMatrix)
-#cv2.waitKey(0)
-bigMatrix = np.dot(bigMatrix, U[:, 1:k])    # reduced dimension representation of the data, where k is the number of eigenvectors to keep
+pca = RandomizedPCA(n_components = k, whiten = True)
+pca.fit_transform(bigMatrix) # reduced dimension representation of the data, where k is the number of eigenvectors to keep
 
-#D = np.diag(1./np.sqrt(np.diag(S) + epsilon))
-# whitening matrix
-#W = np.dot(np.dot(U,D),U.T)
-# multiply by the whitening matrix
-#bigMatrix = np.dot(bigMatrix,W)
+#display images with 99% of variance
 
-#PCA whitening
-#bigMatrix = np.dot(np.dot(bigMatrix, U), np.diag(1./np.sqrt(np.diag(S) + epsilon)))
+#for i in range(1, len(randImgIds)+1):
+#    imageFile = np.reshape(bigMatrix[randImgIds[i-1], :], (27, 28, 3))
+#    location = int('{0:d}{1:d}{2:d}'.format(3, 3, i))
+#    plt.subplot(location), plt.imshow(imageFile), plt.title(randImgIds[i-1])
 
-#xZCAWhite = U * np.diag(1./np.sqrt(np.diag(S) + epsilon)) * U.transpose() * bigMatrix
-
-#Build the sparse matrix with the preprocessed image data for both train and test data
-#bigMatrix = lil_matrix((m + mTest), desiredDimensions[0] * desiredDimensions[1])
-
-#someOtherNumbers = range(m)
-#for i in someOtherNumbers:
-#    bigMatrix[i, :] = preprocessImg(trainImageNames[i], desiredDimensions[0], desiredDimensions[1], dataTrainDir)
-
-#someNumbers = range(mTest)
-#for ii in someNumbers:
-#    bigMatrix[testIndexes[ii], :] = preprocessImg(testImageNames[i], desiredDimensions[0], desiredDimensions[1], dataTestDir)
-
-#Transform to csr matrix and standarization
-#bigMatrix = bigMatrix.tocsr()
-#scaler = StandardScaler(with_mean=False)
-#scaler.fit(bigMatrix)
-#X_train = scaler.transform(X_train)
-#X_test = scaler.transform(X_test)  # apply same transformation to test data
-
-#bigMatrix = preprocessing.scale(bigMatrix, with_mean=False)
+#plt.show()
 
 #pre-train networks using Restricted Boltzmann Machine
 #first layer
@@ -175,46 +150,42 @@ bigMatrix = min_max_scaler.fit_transform(bigMatrix)
 vectorOfOnes =  np.tile(1.0, (bigMatrix.shape[0], 1))
 bigMatrix = np.hstack((vectorOfOnes, bigMatrix))
 
-RBM1 = BernoulliRBM(verbose = True)
-RBM1.learning_rate = 0.01
-RBM1.n_iter = 20
-RBM1.n_components = 200
-RBM1.fit(bigMatrix)
-
 #Divide train Matrix and Test Matrix (for which I don't have labels)
 trainMatrixReduced = bigMatrix[someOtherNumbers, :]
 testMatrixReduced = bigMatrix[testIndexes, :]
 
-#Divide training dataset for cross validation purposes
-X_train, X_test, y_train, y_test = cross_validation.train_test_split(
-    trainMatrixReduced, y[0:trainMatrixReduced.shape[0], :], test_size=0.4, random_state=0)
+RBM1 = BernoulliRBM(verbose = True)
+RBM1.learning_rate = 0.005
+RBM1.n_iter = 40
+RBM1.n_components = 700
+RBM1.fit(bigMatrix)
 
 ThetaHiddenOne = RBM1.components_.T
 
-hiddenOne = sigmoid(np.dot(X_train, ThetaHiddenOne))
+bigMatrix = sigmoid(np.dot(bigMatrix, ThetaHiddenOne))
 
-vectorOfOnes =  np.tile(1.0, (hiddenOne.shape[0], 1))
-hiddenOne = np.hstack((vectorOfOnes, hiddenOne))
+vectorOfOnes =  np.tile(1.0, (bigMatrix.shape[0], 1))
+bigMatrix = np.hstack((vectorOfOnes, bigMatrix))
 
 #second layer
 RBM2 = BernoulliRBM(verbose = True)
-RBM2.learning_rate = 0.05
+RBM2.learning_rate = 0.01
 RBM2.n_iter = 40
-RBM2.n_components = 100
-RBM2.fit(hiddenOne)
+RBM2.n_components = 500
+RBM2.fit(bigMatrix)
 
 ThetaHiddenTwo = RBM2.components_.T
-hiddenTwo = sigmoid(np.dot(hiddenOne, ThetaHiddenTwo))
+bigMatrix = sigmoid(np.dot(bigMatrix, ThetaHiddenTwo))
 
-vectorOfOnes =  np.tile(1.0, (hiddenTwo.shape[0], 1))
-hiddenTwo = np.hstack((vectorOfOnes, hiddenTwo))
+vectorOfOnes =  np.tile(1.0, (bigMatrix.shape[0], 1))
+bigMatrix = np.hstack((vectorOfOnes, bigMatrix))
 
 #third layer
 RBM3 = BernoulliRBM(verbose = True)
 RBM3.learning_rate = 0.01
 RBM3.n_iter = 40
 RBM3.n_components = 37
-RBM3.fit(hiddenTwo)
+RBM3.fit(bigMatrix)
 
 ThetaHiddenThree = RBM3.components_.T
 
@@ -227,9 +198,25 @@ hidden2_layer_size = RBM2.n_components
 num_labels = RBM3.n_components
 NNlambda = 1
 
+
+#display random weights of the first layer
+#randWeightsIds = np.random.randint(0, RBM1.n_components, 9)
+
+
+#for i in range(1, len(randImgIds)+1):
+#    imageFile = np.reshape(ThetaHiddenOne[randWeightsIds[i-1], :], (desiredDimensions[0], desiredDimensions[1], 3))
+#    location = int('{0:d}{1:d}{2:d}'.format(3, 3, i))
+#    plt.subplot(location), plt.imshow(imageFile), plt.title(randImgIds[i-1])
+
+#plt.show()
+
+#Divide training dataset for cross validation purposes
+X_train, X_test, y_train, y_test = cross_validation.train_test_split(
+    trainMatrixReduced, y[0:trainMatrixReduced.shape[0], :], test_size=0.4, random_state=0)
+
 #compute Numerical Gradient
 #Check gradients by running checkNNGradients
-checkNNGradients(NNlambda)
+#checkNNGradients(NNlambda)
 
 #mini-batch learning with either L-BFGS or Conjugate gradient
 #Optimization
