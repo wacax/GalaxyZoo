@@ -12,7 +12,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from webbrowser import open as imdisplay
 from sklearn.decomposition import RandomizedPCA
-from scipy.sparse import lil_matrix
 from sklearn import cross_validation
 from sklearn.neural_network import BernoulliRBM
 from sklearn import preprocessing
@@ -23,7 +22,10 @@ from sigmoidFun import sigmoid
 from NNCostFun import nnCostFunction
 from NNGradientFun import nnGradFunction
 from NNpredictionFun import predictionFromNNs
+from scipy import signal
 from checkNNGradients import checkNNGradients
+from scipy import ndimage
+from skimage.util.shape import view_as_windows
 
 #Init
 
@@ -45,9 +47,9 @@ for file in testImageNames:
      testImageNames.remove(file)
 
 #m = len(trainImageNames)
-m = 5000 #pet train dataset
+m =  5000 #pet train dataset
 #mTest = len(testImageNames)
-mTest = 3000 #pet test dataset
+mTest = 5000 #pet test dataset
 testImageNames = sorted(testImageNames)
 trainImageNames = sorted(trainImageNames)
 
@@ -85,6 +87,60 @@ def preprocessImg(name, dim1, dim2, dataDir):
     npImage = cv2.resize(npImage, (dim1, dim2))
     return(npImage.reshape(1, dim1 * dim2 * 3))
 
+###############################################
+
+dimensionsKernel = 8, 8
+NumberOfFilters = 49
+
+#gaborsExtractor
+patch_shape = dimensionsKernel
+n_filters = NumberOfFilters
+vectorof255s =  np.tile(255., (424, 424, 3))
+NumberOfPatches = 1000
+NumberofImagesSampled = 100
+
+idx11 = np.random.random_integers(0, len(trainImageNames) + len(trainImageNames), NumberofImagesSampled)
+
+def extractPatches(name, n_filters, patch_shape, dataDir, vector, numberOfPatchesPerImage):
+    imageName = '{0:s}{1:s}'.format(dataDir, name)
+    npImage = cv2.imread(imageName)
+    npImage = np.divide(npImage, vector)
+    patchesSampled = np.empty(shape=(NumberOfPatches, patch_shape[0] * patch_shape[1], 3))
+    for i in range(npImage.shape[2]):
+        patches = view_as_windows(npImage[:,:,i], patch_shape)
+        patches = patches.reshape(-1, patch_shape[0] * patch_shape[1])[::8]
+        patchesSampled[:,:,i] = patches[np.random.random_integers(0, patches.shape[0], numberOfPatchesPerImage), :]
+        return(patchesSampled)
+
+#Init a empty matrix
+PatchesMatrix = np.empty(shape=(NumberofImagesSampled * NumberOfPatches,
+                            patch_shape[0] * patch_shape[1], 3))
+
+someOtherNumbers = range(NumberofImagesSampled)
+for i in someOtherNumbers:
+    PatchesMatrix = np.row_stack((PatchesMatrix, extractPatches(trainImageNames[i], n_filters, patch_shape, dataTrainDir, vectorof255s, NumberOfPatches)))
+
+
+
+indexesFilter = np.random.permutation(dimensionsKernel[0] * dimensionsKernel[1])
+W = np.tile(0., dimensionsKernel[0] * dimensionsKernel[1])
+W[indexesFilter[indexesFilter / 2]] = 1.
+W = np.reshape(W, (dimensionsKernel[0], dimensionsKernel[1]))
+W = np.flipud(np.fliplr(W))
+
+arf = signal.fftconvolve(npImage[:,:,0], kernel, mode='valid')
+arf2 = ndimage.convolve(npImage[:,:,0], kernel, mode='constant', cval=0.0)
+
+####################################################
+#define loading and pre-processing function in color
+def preprocessImg(name, dim1, dim2, dataDir, kernel):
+    imageName = '{0:s}{1:s}'.format(dataDir, name)
+    npImage = cv2.imread(imageName)
+    vectorof255s =  np.tile(255., (npImage.shape[0], npImage.shape [1], 3))
+    npImage = np.divide(npImage, vectorof255s)
+    for i in range(npImage.shape[2]):
+        npImage[:,:,i] = min_max_scaler.fit_transform(npImage[:, :, i])
+    return(npImage.reshape(1, dim1 * dim2 * 3))
 
 indexesImTrain = np.random.permutation(m)
 indexesImTest = np.random.permutation(mTest)
@@ -115,28 +171,28 @@ bigMatrix = preprocessing.scale(bigMatrix)
 
 #calculate number of components to retain 99% of variance
 #Extract around 10000 samples and calculate the 99% of variance on a small dataset
-randIndexes = np.random.randint(0, bigMatrix.shape[0], np.floor(bigMatrix.shape[0] / 7.0))
+#randIndexes = np.random.randint(0, bigMatrix.shape[0], 10000)
 
 #Compute Sigma
-sigma = np.dot(bigMatrix[randIndexes, :].T, bigMatrix[randIndexes, :]) / bigMatrix[randIndexes, :].shape[1]
+#sigma = np.dot(bigMatrix[randIndexes, :].T, bigMatrix[randIndexes, :]) / bigMatrix[randIndexes, :].shape[1]
 #SVD decomposition
-U,S,V = np.linalg.svd(sigma) # SVD decomposition of sigma
-def anonFunOne(vector):
-    sumS = np.sum(vector)
-    for ii in range(len(vector)):
-            variance = np.sum(vector[0:ii]) / sumS
-            if variance > 0.99:
-                return(ii)
-                break
-k = anonFunOne(S) + 100
+#U,S,V = np.linalg.svd(sigma) # SVD decomposition of sigma
+#def anonFunOne(vector):
+#    sumS = np.sum(vector)
+#    for ii in range(len(vector)):
+#            variance = np.sum(vector[0:ii]) / sumS
+#            if variance > 0.99:
+#                return(ii)
+#                break
+#k = anonFunOne(S) + 100
 
-pca = RandomizedPCA(n_components = k, whiten = True)
-pca.fit_transform(bigMatrix) # reduced dimension representation of the data, where k is the number of eigenvectors to keep
+#pca = RandomizedPCA(n_components = k, whiten = True)
+#bigMatrix = pca.fit_transform(bigMatrix) # reduced dimension representation of the data, where k is the number of eigenvectors to keep
 
 #display images with 99% of variance
 
 #for i in range(1, len(randImgIds)+1):
-#    imageFile = np.reshape(bigMatrix[randImgIds[i-1], :], (27, 28, 3))
+#    imageFile = np.reshape(bigMatrix[randImgIds[i-1], 0:bigMatrix.shape[1] - 1], (10, 13, 3))
 #    location = int('{0:d}{1:d}{2:d}'.format(3, 3, i))
 #    plt.subplot(location), plt.imshow(imageFile), plt.title(randImgIds[i-1])
 
@@ -169,7 +225,7 @@ bigMatrix = np.hstack((vectorOfOnes, bigMatrix))
 
 #second layer
 RBM2 = BernoulliRBM(verbose = True)
-RBM2.learning_rate = 0.01
+RBM2.learning_rate = 0.03
 RBM2.n_iter = 40
 RBM2.n_components = 500
 RBM2.fit(bigMatrix)
