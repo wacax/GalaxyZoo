@@ -5,12 +5,12 @@ from sigmoidFun import sigmoid
 from sigmoidGradientFun import sigmoidGradient
 
 #define Gradient
-def nnGradFunction(nnThetas, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X, y, NNlambda):
+def nnGradFunction(Thetas, input_layer_size, hidden1_layer_size, hidden2_layer_size, num_labels, X, y, NNlambda):
 
-    Theta1 = np.reshape(nnThetas[0: input_layer_size * hidden1_layer_size], (input_layer_size, hidden1_layer_size))
-    Theta2 = np.reshape(nnThetas[input_layer_size * hidden1_layer_size : hidden1_layer_size * input_layer_size + (1 + hidden1_layer_size) * hidden2_layer_size],
+    Theta1 = np.reshape(Thetas[0: input_layer_size * hidden1_layer_size], (input_layer_size, hidden1_layer_size))
+    Theta2 = np.reshape(Thetas[input_layer_size * hidden1_layer_size : hidden1_layer_size * input_layer_size + (1 + hidden1_layer_size) * hidden2_layer_size],
                         (1 + hidden1_layer_size, hidden2_layer_size))
-    Theta3 = np.reshape(nnThetas[len(nnThetas) - (1 + hidden2_layer_size) * num_labels : len(nnThetas)],
+    Theta3 = np.reshape(Thetas[len(Thetas) - (1 + hidden2_layer_size) * num_labels : len(Thetas)],
                         (1 + hidden2_layer_size, num_labels))
 
     m = X.shape[0]
