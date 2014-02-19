@@ -6,13 +6,10 @@ from computeNumericalGradient import computeNumericalGradient
 from NNCostFun import nnCostFunction
 from NNGradientFun import nnGradFunction
 
-
-
 def debugInitializeWeights(fan_out, fan_in):
     W  =  tile(0.0, (1 + fan_in, fan_out))
     W = reshape(sin(range(0 ,W.shape[1] * W.shape[0])), W.shape) / 10.0
     return(W)
-
 
 def checkNNGradients(NNlambda = 0.0):
     input_layer_size = 3
@@ -65,5 +62,6 @@ def checkNNGradients(NNlambda = 0.0):
 
     print('If your backpropagation implementation is correct, then the relative difference will be small (less than 1e-9) relative Difference')
     print(diff)
+    return(diff)
 
 
