@@ -26,6 +26,8 @@ from scipy import signal
 from checkNNGradients import checkNNGradients
 from scipy import ndimage
 from skimage.util.shape import view_as_windows
+from scipy.cluster.vq import kmeans2
+from skimage.util.montage import montage2d
 
 #Init
 
@@ -88,20 +90,18 @@ def preprocessImg(name, dim1, dim2, dataDir):
     return(npImage.reshape(1, dim1 * dim2 * 3))
 
 ###############################################
-
 dimensionsKernel = 8, 8
 NumberOfFilters = 49
 
-#gaborsExtractor
 patch_shape = dimensionsKernel
 n_filters = NumberOfFilters
 vectorof255s =  np.tile(255., (424, 424, 3))
-NumberOfPatches = 1000
-NumberofImagesSampled = 100
+NumberOfPatches = 10
+NumberofImagesSampled = 10
 
-idx11 = np.random.random_integers(0, len(trainImageNames) + len(trainImageNames), NumberofImagesSampled)
+idx11 = np.random.random_integers(0, len(trainImageNames), NumberofImagesSampled)
 
-def extractPatches(name, n_filters, patch_shape, dataDir, vector, numberOfPatchesPerImage):
+def extractPatches(name, patch_shape, dataDir, vector, numberOfPatchesPerImage):
     imageName = '{0:s}{1:s}'.format(dataDir, name)
     npImage = cv2.imread(imageName)
     npImage = np.divide(npImage, vector)
@@ -112,35 +112,48 @@ def extractPatches(name, n_filters, patch_shape, dataDir, vector, numberOfPatche
         patchesSampled[:,:,i] = patches[np.random.random_integers(0, patches.shape[0], numberOfPatchesPerImage), :]
         return(patchesSampled)
 
-#Init a empty matrix
+#Init an empty matrix
 PatchesMatrix = np.empty(shape=(NumberofImagesSampled * NumberOfPatches,
-                            patch_shape[0] * patch_shape[1], 3))
+                                patch_shape[0] * patch_shape[1], 3))
 
 someOtherNumbers = range(NumberofImagesSampled)
+counter = 0
 for i in someOtherNumbers:
-    PatchesMatrix = np.row_stack((PatchesMatrix, extractPatches(trainImageNames[i], n_filters, patch_shape, dataTrainDir, vectorof255s, NumberOfPatches)))
+    PatchesMatrix[counter:counter + NumberOfPatches, :, :] = extractPatches(trainImageNames[idx11[i]], patch_shape, dataTrainDir, vectorof255s, NumberOfPatches)
+    counter += NumberOfPatches
 
+###kmeans method Gabors Extractor
+montages3Channels =  np.empty(shape=(n_filters, 8, 8, PatchesMatrix.shape[2]))
+for i in range(PatchesMatrix.shape[2]):
+    fb, _ = kmeans2(PatchesMatrix[:,:,i], n_filters, minit='points')
+    fb = fb.reshape((-1,) + patch_shape)
+#    fb_montage = montage2d(fb, rescale_intensity=True)
+    montages3Channels[:,:, :, i] = fb
 
-
-indexesFilter = np.random.permutation(dimensionsKernel[0] * dimensionsKernel[1])
-W = np.tile(0., dimensionsKernel[0] * dimensionsKernel[1])
-W[indexesFilter[indexesFilter / 2]] = 1.
-W = np.reshape(W, (dimensionsKernel[0], dimensionsKernel[1]))
-W = np.flipud(np.fliplr(W))
+###RBM method
+montages3Channels =  np.empty(shape=(patch_shape[0] * patch_shape[1], n_filters, PatchesMatrix.shape[2]))
+RBMPatches = BernoulliRBM(n_components=n_filters, learning_rate=0.1, verbose =True)
+for i in range(PatchesMatrix.shape[2]):
+    RBMPatches.fit(PatchesMatrix[:,:,i])
+    RBMComponents = RBMPatches.components_.T
+    montages3Channels[:,:, i] = RBMComponents
 
 arf = signal.fftconvolve(npImage[:,:,0], kernel, mode='valid')
 arf2 = ndimage.convolve(npImage[:,:,0], kernel, mode='constant', cval=0.0)
 
 ####################################################
 #define loading and pre-processing function in color
-def preprocessImg(name, dim1, dim2, dataDir, kernel):
+def preprocessImg(name, dim1, dim2, dataDir, kernelList, b):
     imageName = '{0:s}{1:s}'.format(dataDir, name)
     npImage = cv2.imread(imageName)
     vectorof255s =  np.tile(255., (npImage.shape[0], npImage.shape [1], 3))
     npImage = np.divide(npImage, vectorof255s)
     for i in range(npImage.shape[2]):
-        npImage[:,:,i] = min_max_scaler.fit_transform(npImage[:, :, i])
+        for ii in range(len(b)):
+            kernel = np.reshape(kernelList[:, ii, i], (patch_shape[0], patch_shape[1]))
+            somethingsomething[:,:,ii] = signal.fftconvolve(npImage[:,:,i], np.flipud(np.fliplr(kernel)), mode='valid')
     return(npImage.reshape(1, dim1 * dim2 * 3))
+
 
 indexesImTrain = np.random.permutation(m)
 indexesImTest = np.random.permutation(mTest)
