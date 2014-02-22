@@ -110,7 +110,7 @@ def extractPatches(name, patch_shape, dataDir, vector, numberOfPatchesPerImage):
         patches = view_as_windows(npImage[:,:,i], patch_shape)
         patches = patches.reshape(-1, patch_shape[0] * patch_shape[1])[::8]
         patchesSampled[:,:,i] = patches[np.random.random_integers(0, patches.shape[0], numberOfPatchesPerImage), :]
-        return(patchesSampled)
+    return(patchesSampled)
 
 #Init an empty matrix
 PatchesMatrix = np.empty(shape=(NumberofImagesSampled * NumberOfPatches,
@@ -131,33 +131,40 @@ for i in range(PatchesMatrix.shape[2]):
     montages3Channels[:,:, :, i] = fb
 
 ###RBM method
-montages3Channels =  np.empty(shape=(patch_shape[0] * patch_shape[1], n_filters, PatchesMatrix.shape[2]))
+montages3Channels =  np.empty(shape=(1+ patch_shape[0] * patch_shape[1], n_filters, PatchesMatrix.shape[2]))
 RBMPatches = BernoulliRBM(n_components=n_filters, learning_rate=0.1, verbose =True)
+vectorOfOnes= np.tile(1.0, (PatchesMatrix.shape[0], 1))
 for i in range(PatchesMatrix.shape[2]):
-    RBMPatches.fit(PatchesMatrix[:,:,i])
+    RBMPatches.fit(np.hstack((vectorOfOnes, PatchesMatrix[:,:,i])))
     RBMComponents = RBMPatches.components_.T
     montages3Channels[:,:, i] = RBMComponents
 
-arf = signal.fftconvolve(npImage[:,:,0], kernel, mode='valid')
-arf2 = ndimage.convolve(npImage[:,:,0], kernel, mode='constant', cval=0.0)
+b =  montages3Channels[0, :, :]
+montages3Channels = montages3Channels[1:montages3Channels.shape[0],:,:]
 
 ####################################################
 #define loading and pre-processing function in color
-def preprocessImg(name, dim1, dim2, dataDir, kernelList, b):
+def preprocessImg(name, dim1, dim2, dataDir, vector, kernelList, b):
     imageName = '{0:s}{1:s}'.format(dataDir, name)
     npImage = cv2.imread(imageName)
-    vectorof255s =  np.tile(255., (npImage.shape[0], npImage.shape [1], 3))
-    npImage = np.divide(npImage, vectorof255s)
+    npImage = np.divide(npImage, vector)
     for i in range(npImage.shape[2]):
-        for ii in range(len(b)):
+        convulutedOneImageMatrix = np.empty(shape=(npImage.shape[0] - patch_shape[0] + 1, npImage.shape[1] - patch_shape[1] + 1, n_filters, npImage.shape[2]))
+        for ii in range(n_filters):
             kernel = np.reshape(kernelList[:, ii, i], (patch_shape[0], patch_shape[1]))
-            somethingsomething[:,:,ii] = signal.fftconvolve(npImage[:,:,i], np.flipud(np.fliplr(kernel)), mode='valid')
-    return(npImage.reshape(1, dim1 * dim2 * 3))
+            convolutedImage = signal.fftconvolve(npImage[:,:,i], np.flipud(np.fliplr(kernel)), mode='valid')
+#            convolutedImage = ndimage.convolve(npImage[:,:,i], np.flipud(np.fliplr(kernel)), mode='constant', cval=0.0)
+            convulutedOneImageMatrix[:,:,ii, i] = sigmoid(convolutedImage + b[ii, i])
 
+#424 − 8 + 1
 
 indexesImTrain = np.random.permutation(m)
 indexesImTest = np.random.permutation(mTest)
 testIndexes = range(m, m + mTest)
+
+#Important DO NOT forget
+vectorof255s =  np.tile(255., (424, 424, 3))
+
 
 #Init the empty matrix
 bigMatrix = np.empty(shape=(m + mTest, desiredDimensions[0] * desiredDimensions[1] * 3))
