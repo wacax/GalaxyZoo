@@ -142,21 +142,47 @@ for i in range(PatchesMatrix.shape[2]):
 b =  montages3Channels[0, :, :]
 montages3Channels = montages3Channels[1:montages3Channels.shape[0],:,:]
 
+#Create template for pooling
+axis0 = vectorof255s.shape[0] - patch_shape[0] + 1
+axis1 = vectorof255s.shape[1] - patch_shape[1] + 1
+dummyArray = np.zeros(shape = (axis0, axis1))
+sections0 = np.array_split(dummyArray[:,0], 9)
+sections1 = np.array_split(dummyArray[:,1], 9)
+poolDim0 = np.empty(shape=(len(sections0), 2))
+counter = 0
+for i in range(len(sections0)):
+    poolDim0[i, :] = [counter, counter + len(sections0[i])]
+    counter += len(sections0[i])
+poolDim1 = np.empty(shape=(len(sections1), 2))
+counter = 0
+for i in range(len(sections1)):
+    poolDim1[i, :] = [counter, counter + len(sections1[i])]
+    counter += len(sections0[i])
+poolDim = np.hstack((poolDim0, poolDim1))
+
 ####################################################
 #define loading and pre-processing function in color
-def preprocessImg(name, dim1, dim2, dataDir, vector, kernelList, b):
+def preprocessImg(name, poolDim, dataDir, vector, kernelList, b, parts):
     imageName = '{0:s}{1:s}'.format(dataDir, name)
     npImage = cv2.imread(imageName)
     npImage = np.divide(npImage, vector)
+    features3Channels = np.empty(shape=(poolDim.shape[0] * poolDim.shape[0] * b.shape[0], 3))
     for i in range(npImage.shape[2]):
-        convulutedOneImageMatrix = np.empty(shape=(npImage.shape[0] - patch_shape[0] + 1, npImage.shape[1] - patch_shape[1] + 1, n_filters, npImage.shape[2]))
-        for ii in range(n_filters):
+        convolvedFeatures = np.empty(shape=(poolDim.shape[0] * poolDim.shape[0], b.shape[0]))
+        for ii in range(b.shape[0]):
             kernel = np.reshape(kernelList[:, ii, i], (patch_shape[0], patch_shape[1]))
-            convolutedImage = signal.fftconvolve(npImage[:,:,i], np.flipud(np.fliplr(kernel)), mode='valid')
-#            convolutedImage = ndimage.convolve(npImage[:,:,i], np.flipud(np.fliplr(kernel)), mode='constant', cval=0.0)
-            convulutedOneImageMatrix[:,:,ii, i] = sigmoid(convolutedImage + b[ii, i])
+            convolvedImage = signal.fftconvolve(npImage[:,:,i], np.flipud(np.fliplr(kernel)), mode='valid')
+            convolvedImage = sigmoid(convolvedImage + b[ii, i])
+            poolMatrix = np.empty(shape = (poolDim.shape[0], poolDim.shape[0]))
+            for iii in range(poolDim.shape[0]):
+                for iiii in range(poolDim.shape[0]):
+                    poolMatrix[iiii, iii] = np.mean((convolvedImage[poolDim[iii, 0] : poolDim[iii, 1], poolDim[iiii, 2] : poolDim[iiii, 3]]).flatten())
+            poolMatrix = poolMatrix.flatten()
+            convolvedFeatures[:, ii] = poolMatrix
+        convolvedFeatures = convolvedFeatures.flatten()
+        features3Channels[:, i] = convolvedFeatures
+    return(features3Channels.flatten())
 
-#424 − 8 + 1
 
 indexesImTrain = np.random.permutation(m)
 indexesImTest = np.random.permutation(mTest)
