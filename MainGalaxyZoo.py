@@ -107,6 +107,7 @@ def extractPatches(name, patch_shape, dataDir, vector, numberOfPatchesPerImage):
     imageName = '{0:s}{1:s}'.format(dataDir, name)
     npImage = cv2.imread(imageName)
     npImage = np.divide(npImage, vector)
+    npImage = cv2.resize(npImage, (65, 65))
     patchesSampled = np.empty(shape=(NumberOfPatches, patch_shape[0] * patch_shape[1], 3))
     for i in range(npImage.shape[2]):
         patches = view_as_windows(npImage[:,:,i], patch_shape)
@@ -165,8 +166,8 @@ poolDim = np.hstack((poolDim0, poolDim1))
 
 ####################################################
 #define loading and pre-processing function in color
-def preprocessImg(name, shrunkShape, dataDir, vector, kernelList, b):
-    start = time.clock()
+def preprocessImgConvolution(name, dataDir, vector, kernelList, b):
+    #start = time.clock()
     imageName = '{0:s}{1:s}'.format(dataDir, name)
     npImage = cv2.imread(imageName)
     npImage = np.divide(npImage, vector)
@@ -183,7 +184,7 @@ def preprocessImg(name, shrunkShape, dataDir, vector, kernelList, b):
         convolvedFeatures = np.reshape(convolvedFeatures, (npImage.shape[0] * npImage.shape[1], b.shape[0]))
         features3Channels[0,:,i] = np.mean(convolvedFeatures, axis = 0)
         features3Channels[1,:,i] = np.var(convolvedFeatures, axis = 0)
-        print(time.clock() - start)
+        #print(time.clock() - start)
     return(features3Channels.flatten())
 
 
@@ -201,8 +202,7 @@ def preprocessImg(name, shrunkShape, dataDir, vector, kernelList, b):
 
 ###################################################################
 #################################################################
-
-
+#Create the matrix with convolution + pooling features
 indexesImTrain = np.random.permutation(m)
 indexesImTest = np.random.permutation(mTest)
 testIndexes = range(m, m + mTest)
@@ -210,6 +210,45 @@ testIndexes = range(m, m + mTest)
 #Important DO NOT forget
 vectorof255s =  np.tile(255., (424, 424, 3))
 
+#Init the empty matrix
+bigMatrix = np.empty(shape=(m + mTest, 2 * n_filters * 3))
+
+someOtherNumbers = range(m)
+for i in someOtherNumbers:
+    bigMatrix[i, :] = preprocessImgConvolution(testImageNames[i], dataTrainDir, vectorof255s, montages3Channels, b)
+
+someNumbers = range(mTest)
+for ii in someNumbers:
+    bigMatrix[testIndexes[ii], :] = preprocessImgConvolution(testImageNames[ii], dataTrainDir, vectorof255s, montages3Channels, b)
+
+##########################################
+#calculate number of components to retain 99% of variance
+#Extract around 10000 samples and calculate the 99% of variance on a small dataset
+randIndexes = np.random.randint(0, len(trainImageNames), 10000)
+
+#Init the empty matrix
+bigMatrix = np.empty(shape=(len(randIndexes), desiredDimensions[0] * desiredDimensions[1] * 3))
+
+someOtherNumbers = range(len(randIndexes))
+for i in someOtherNumbers:
+    bigMatrix[i, :] = preprocessImg(trainImageNames[randIndexes[i]], desiredDimensions[0], desiredDimensions[1], dataTrainDir)
+
+#Compute Sigma
+sigma = np.dot(bigMatrix.T, bigMatrix) / bigMatrix.shape[1]
+#SVD decomposition
+U,S,V = np.linalg.svd(sigma) # SVD decomposition of sigma
+def anonFunOne(vector):
+    sumS = np.sum(vector)
+    for ii in range(len(vector)):
+            variance = np.sum(vector[0:ii]) / sumS
+            if variance > 0.99:
+                return(ii)
+                break
+k = anonFunOne(S) + 100
+
+indexesImTrain = np.random.permutation(m)
+indexesImTest = np.random.permutation(mTest)
+testIndexes = range(m, m + mTest)
 
 #Init the empty matrix
 bigMatrix = np.empty(shape=(m + mTest, desiredDimensions[0] * desiredDimensions[1] * 3))
@@ -220,7 +259,7 @@ for i in someOtherNumbers:
 
 someNumbers = range(mTest)
 for ii in someNumbers:
-    bigMatrix[testIndexes[ii], :] = preprocessImg(testImageNames[i], desiredDimensions[0], desiredDimensions[1], dataTestDir)
+    bigMatrix[testIndexes[ii], :] = preprocessImg(testImageNames[ii], desiredDimensions[0], desiredDimensions[1], dataTestDir)
 
 #display raw images
 randImgIds = np.random.randint(0, bigMatrix.shape[0], 9)
@@ -234,25 +273,8 @@ plt.show()
 #compute the mean for each patch and subtracting it
 bigMatrix = preprocessing.scale(bigMatrix)
 
-#calculate number of components to retain 99% of variance
-#Extract around 10000 samples and calculate the 99% of variance on a small dataset
-#randIndexes = np.random.randint(0, bigMatrix.shape[0], 10000)
-
-#Compute Sigma
-#sigma = np.dot(bigMatrix[randIndexes, :].T, bigMatrix[randIndexes, :]) / bigMatrix[randIndexes, :].shape[1]
-#SVD decomposition
-#U,S,V = np.linalg.svd(sigma) # SVD decomposition of sigma
-#def anonFunOne(vector):
-#    sumS = np.sum(vector)
-#    for ii in range(len(vector)):
-#            variance = np.sum(vector[0:ii]) / sumS
-#            if variance > 0.99:
-#                return(ii)
-#                break
-#k = anonFunOne(S) + 100
-
-#pca = RandomizedPCA(n_components = k, whiten = True)
-#bigMatrix = pca.fit_transform(bigMatrix) # reduced dimension representation of the data, where k is the number of eigenvectors to keep
+pca = RandomizedPCA(n_components = k, whiten = True)
+bigMatrix = pca.fit_transform(bigMatrix) # reduced dimension representation of the data, where k is the number of eigenvectors to keep
 
 #display images with 99% of variance
 
@@ -276,8 +298,8 @@ trainMatrixReduced = bigMatrix[someOtherNumbers, :]
 testMatrixReduced = bigMatrix[testIndexes, :]
 
 RBM1 = BernoulliRBM(verbose = True)
-RBM1.learning_rate = 0.005
-RBM1.n_iter = 40
+RBM1.learning_rate = 0.04
+RBM1.n_iter = 20
 RBM1.n_components = 700
 RBM1.fit(bigMatrix)
 
@@ -291,7 +313,7 @@ bigMatrix = np.hstack((vectorOfOnes, bigMatrix))
 #second layer
 RBM2 = BernoulliRBM(verbose = True)
 RBM2.learning_rate = 0.03
-RBM2.n_iter = 40
+RBM2.n_iter = 20
 RBM2.n_components = 500
 RBM2.fit(bigMatrix)
 
