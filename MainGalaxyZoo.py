@@ -8,6 +8,7 @@ import os
 import cv2
 import csv
 import numpy as np
+from scipy import ndimage as nd
 import pandas as pd
 import matplotlib.pyplot as plt
 from webbrowser import open as imdisplay
@@ -89,9 +90,10 @@ def preprocessImg(name, dim1, dim2, dataDir):
     npImage = cv2.resize(npImage, (dim1, dim2))
     return(npImage.reshape(1, dim1 * dim2 * 3))
 
+#TOO SLOW
 ###############################################
 dimensionsKernel = 8, 8
-NumberOfFilters = 49
+NumberOfFilters = 50
 
 patch_shape = dimensionsKernel
 n_filters = NumberOfFilters
@@ -132,7 +134,7 @@ for i in range(PatchesMatrix.shape[2]):
 
 ###RBM method
 montages3Channels =  np.empty(shape=(1+ patch_shape[0] * patch_shape[1], n_filters, PatchesMatrix.shape[2]))
-RBMPatches = BernoulliRBM(n_components=n_filters, learning_rate=0.1, verbose =True)
+RBMPatches = BernoulliRBM(n_components=n_filters, learning_rate=0.01, n_iter= 25, verbose =True)
 vectorOfOnes= np.tile(1.0, (PatchesMatrix.shape[0], 1))
 for i in range(PatchesMatrix.shape[2]):
     RBMPatches.fit(np.hstack((vectorOfOnes, PatchesMatrix[:,:,i])))
@@ -146,8 +148,9 @@ montages3Channels = montages3Channels[1:montages3Channels.shape[0],:,:]
 axis0 = vectorof255s.shape[0] - patch_shape[0] + 1
 axis1 = vectorof255s.shape[1] - patch_shape[1] + 1
 dummyArray = np.zeros(shape = (axis0, axis1))
-sections0 = np.array_split(dummyArray[:,0], 9)
-sections1 = np.array_split(dummyArray[:,1], 9)
+shrunkShape = dummyArray.shape
+sections0 = np.array_split(dummyArray[:,0], 4)
+sections1 = np.array_split(dummyArray[:,1], 4)
 poolDim0 = np.empty(shape=(len(sections0), 2))
 counter = 0
 for i in range(len(sections0)):
@@ -162,26 +165,42 @@ poolDim = np.hstack((poolDim0, poolDim1))
 
 ####################################################
 #define loading and pre-processing function in color
-def preprocessImg(name, poolDim, dataDir, vector, kernelList, b, parts):
+def preprocessImg(name, shrunkShape, dataDir, vector, kernelList, b):
+    start = time.clock()
     imageName = '{0:s}{1:s}'.format(dataDir, name)
     npImage = cv2.imread(imageName)
     npImage = np.divide(npImage, vector)
-    features3Channels = np.empty(shape=(poolDim.shape[0] * poolDim.shape[0] * b.shape[0], 3))
+    npImage = cv2.resize(npImage, (65, 65))
+    features3Channels = np.empty(shape = (2, b.shape[0], 3))
     for i in range(npImage.shape[2]):
-        convolvedFeatures = np.empty(shape=(poolDim.shape[0] * poolDim.shape[0], b.shape[0]))
+        convolvedFeatures = np.empty(shape = (npImage.shape[0], npImage.shape[1], b.shape[0]))
+        #convolvedFeatures = np.empty(shape = (shrunkShape[0], shrunkShape[1], b.shape[0]))
         for ii in range(b.shape[0]):
             kernel = np.reshape(kernelList[:, ii, i], (patch_shape[0], patch_shape[1]))
-            convolvedImage = signal.fftconvolve(npImage[:,:,i], np.flipud(np.fliplr(kernel)), mode='valid')
-            convolvedImage = sigmoid(convolvedImage + b[ii, i])
-            poolMatrix = np.empty(shape = (poolDim.shape[0], poolDim.shape[0]))
-            for iii in range(poolDim.shape[0]):
-                for iiii in range(poolDim.shape[0]):
-                    poolMatrix[iiii, iii] = np.mean((convolvedImage[poolDim[iii, 0] : poolDim[iii, 1], poolDim[iiii, 2] : poolDim[iiii, 3]]).flatten())
-            poolMatrix = poolMatrix.flatten()
-            convolvedFeatures[:, ii] = poolMatrix
-        convolvedFeatures = convolvedFeatures.flatten()
-        features3Channels[:, i] = convolvedFeatures
+            #convolvedFeatures[:, :, ii] = signal.fftconvolve(npImage[:,:,i], np.flipud(np.fliplr(kernel)), mode ='valid') + b[ii, i]
+            convolvedFeatures[:, :, ii] = nd.convolve(npImage[:,:,i], np.flipud(np.fliplr(kernel)), mode='wrap') + b[ii, i]
+        convolvedFeatures = sigmoid(convolvedFeatures)
+        convolvedFeatures = np.reshape(convolvedFeatures, (npImage.shape[0] * npImage.shape[1], b.shape[0]))
+        features3Channels[0,:,i] = np.mean(convolvedFeatures, axis = 0)
+        features3Channels[1,:,i] = np.var(convolvedFeatures, axis = 0)
+        print(time.clock() - start)
     return(features3Channels.flatten())
+
+
+            #filteredImage = sigmoid(filteredImage)
+            #convolvedFeatures[ii, 0] = filteredImage.mean()
+            #convolvedFeatures[ii, 1] = filteredImage.var()
+            #poolMatrix = np.empty(shape = (poolDim.shape[0], poolDim.shape[0]))
+            #for iii in range(poolDim.shape[0]):
+            #    for iiii in range(poolDim.shape[0]):
+            #        poolMatrix[iiii, iii] = np.mean((convolvedImage[poolDim[iii, 0] : poolDim[iii, 1], poolDim[iiii, 2] : poolDim[iiii, 3]]).flatten())
+            #poolMatrix = poolMatrix.flatten()
+            #convolvedFeatures[:, ii] = poolMatrix
+        #convolvedFeatures = convolvedFeatures.flatten()
+        #features3Channels[:, i] = convolvedFeatures
+
+###################################################################
+#################################################################
 
 
 indexesImTrain = np.random.permutation(m)
