@@ -50,9 +50,9 @@ for file in testImageNames:
      testImageNames.remove(file)
 
 #m = len(trainImageNames)
-m =  5000 #pet train dataset
+m =  15000 #pet train dataset
 #mTest = len(testImageNames)
-mTest = 5000 #pet test dataset
+mTest = 15000 #pet test dataset
 testImageNames = sorted(testImageNames)
 trainImageNames = sorted(trainImageNames)
 
@@ -97,9 +97,9 @@ NumberOfFilters = 50
 
 patch_shape = dimensionsKernel
 n_filters = NumberOfFilters
-vectorof255s =  np.tile(255., (424, 424, 3))
+vectorof255s = np.tile(255., (424, 424, 3))
 NumberOfPatches = 10
-NumberofImagesSampled = 10
+NumberofImagesSampled = 1000
 
 idx11 = np.random.random_integers(0, len(trainImageNames), NumberofImagesSampled)
 
@@ -107,12 +107,12 @@ def extractPatches(name, patch_shape, dataDir, vector, numberOfPatchesPerImage):
     imageName = '{0:s}{1:s}'.format(dataDir, name)
     npImage = cv2.imread(imageName)
     npImage = np.divide(npImage, vector)
-    npImage = cv2.resize(npImage, (65, 65))
-    patchesSampled = np.empty(shape=(NumberOfPatches, patch_shape[0] * patch_shape[1], 3))
-    for i in range(npImage.shape[2]):
-        patches = view_as_windows(npImage[:,:,i], patch_shape)
+    #npImage = cv2.resize(npImage, (65, 65))
+    patchesSampled = np.empty(shape=(numberOfPatchesPerImage, patch_shape[0] * patch_shape[1], 3))
+    for derp in range(npImage.shape[2]):
+        patches = view_as_windows(npImage[:,:,derp], patch_shape)
         patches = patches.reshape(-1, patch_shape[0] * patch_shape[1])[::8]
-        patchesSampled[:,:,i] = patches[np.random.random_integers(0, patches.shape[0], numberOfPatchesPerImage), :]
+        patchesSampled[:,:,derp] = patches[np.random.random_integers(0, patches.shape[0], numberOfPatchesPerImage), :]
     return(patchesSampled)
 
 #Init an empty matrix
@@ -215,36 +215,36 @@ bigMatrix = np.empty(shape=(m + mTest, 2 * n_filters * 3))
 
 someOtherNumbers = range(m)
 for i in someOtherNumbers:
-    bigMatrix[i, :] = preprocessImgConvolution(testImageNames[i], dataTrainDir, vectorof255s, montages3Channels, b)
+    bigMatrix[i, :] = preprocessImgConvolution(trainImageNames[i], dataTrainDir, vectorof255s, montages3Channels, b)
 
 someNumbers = range(mTest)
 for ii in someNumbers:
-    bigMatrix[testIndexes[ii], :] = preprocessImgConvolution(testImageNames[ii], dataTrainDir, vectorof255s, montages3Channels, b)
+    bigMatrix[testIndexes[ii], :] = preprocessImgConvolution(testImageNames[ii], dataTestDir, vectorof255s, montages3Channels, b)
 
 ##########################################
 #calculate number of components to retain 99% of variance
 #Extract around 10000 samples and calculate the 99% of variance on a small dataset
-randIndexes = np.random.randint(0, len(trainImageNames), 10000)
+#randIndexes = np.random.randint(0, len(trainImageNames), 10000)
 
 #Init the empty matrix
-bigMatrix = np.empty(shape=(len(randIndexes), desiredDimensions[0] * desiredDimensions[1] * 3))
+#bigMatrix = np.empty(shape=(len(randIndexes), desiredDimensions[0] * desiredDimensions[1] * 3))
 
-someOtherNumbers = range(len(randIndexes))
-for i in someOtherNumbers:
-    bigMatrix[i, :] = preprocessImg(trainImageNames[randIndexes[i]], desiredDimensions[0], desiredDimensions[1], dataTrainDir)
+#someOtherNumbers = range(len(randIndexes))
+#for i in someOtherNumbers:
+#    bigMatrix[i, :] = preprocessImg(trainImageNames[randIndexes[i]], desiredDimensions[0], desiredDimensions[1], dataTrainDir)
 
 #Compute Sigma
-sigma = np.dot(bigMatrix.T, bigMatrix) / bigMatrix.shape[1]
+#sigma = np.dot(bigMatrix.T, bigMatrix) / bigMatrix.shape[1]
 #SVD decomposition
-U,S,V = np.linalg.svd(sigma) # SVD decomposition of sigma
-def anonFunOne(vector):
-    sumS = np.sum(vector)
-    for ii in range(len(vector)):
-            variance = np.sum(vector[0:ii]) / sumS
-            if variance > 0.99:
-                return(ii)
-                break
-k = anonFunOne(S) + 100
+#U,S,V = np.linalg.svd(sigma) # SVD decomposition of sigma
+#def anonFunOne(vector):
+#    sumS = np.sum(vector)
+#    for ii in range(len(vector)):
+#            variance = np.sum(vector[0:ii]) / sumS
+#            if variance > 0.99:
+#                return(ii)
+#                break
+#k = anonFunOne(S) + 100
 
 indexesImTrain = np.random.permutation(m)
 indexesImTest = np.random.permutation(mTest)
