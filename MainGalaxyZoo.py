@@ -12,6 +12,7 @@ from scipy import ndimage as nd
 import pandas as pd
 import matplotlib.pyplot as plt
 from webbrowser import open as imdisplay
+from scipy.sparse import lil_matrix
 from sklearn.decomposition import RandomizedPCA
 from sklearn import cross_validation
 from sklearn.neural_network import BernoulliRBM
@@ -29,6 +30,8 @@ from scipy import ndimage
 from skimage.util.shape import view_as_windows
 from scipy.cluster.vq import kmeans2
 from skimage.util.montage import montage2d
+from skimage.filter import gabor_kernel
+from skimage import filter
 
 #Init
 
@@ -50,9 +53,9 @@ for file in testImageNames:
      testImageNames.remove(file)
 
 #m = len(trainImageNames)
-m =  15000 #pet train dataset
+m =  5000 #pet train dataset
 #mTest = len(testImageNames)
-mTest = 15000 #pet test dataset
+mTest = 5000 #pet test dataset
 testImageNames = sorted(testImageNames)
 trainImageNames = sorted(trainImageNames)
 
@@ -99,7 +102,7 @@ patch_shape = dimensionsKernel
 n_filters = NumberOfFilters
 vectorof255s = np.tile(255., (424, 424, 3))
 NumberOfPatches = 10
-NumberofImagesSampled = 1000
+NumberofImagesSampled = 100
 
 idx11 = np.random.random_integers(0, len(trainImageNames), NumberofImagesSampled)
 
@@ -146,8 +149,10 @@ b =  montages3Channels[0, :, :]
 montages3Channels = montages3Channels[1:montages3Channels.shape[0],:,:]
 
 #Create template for pooling
-axis0 = vectorof255s.shape[0] - patch_shape[0] + 1
-axis1 = vectorof255s.shape[1] - patch_shape[1] + 1
+#axis0 = vectorof255s.shape[0] - patch_shape[0] + 1
+#axis1 = vectorof255s.shape[1] - patch_shape[1] + 1
+axis0 = 65 - patch_shape[0] + 1
+axis1 = 65 - patch_shape[1] + 1
 dummyArray = np.zeros(shape = (axis0, axis1))
 shrunkShape = dummyArray.shape
 sections0 = np.array_split(dummyArray[:,0], 4)
@@ -164,10 +169,24 @@ for i in range(len(sections1)):
     counter += len(sections0[i])
 poolDim = np.hstack((poolDim0, poolDim1))
 
+###################################################################
+#Gabor Kernels  artificially generated
+# prepare filter bank kernels
+kernelsGabor = []
+for theta in range(4):
+    theta = theta / 4. * np.pi
+    for sigma in (1, 3):
+        for frequency in (0.05, 0.25):
+            kernel = np.real(gabor_kernel(frequency, theta=theta,
+                                          sigma_x=sigma, sigma_y=sigma))
+            kernel = cv2.resize(kernel, (8, 8))
+
+            kernelsGabor.append(kernel)
+
 ####################################################
 #define loading and pre-processing function in color
-def preprocessImgConvolution(name, dataDir, vector, kernelList, b):
-    #start = time.clock()
+def preprocessImgConvolution(name, shrunkShape, patch_shape, dataDir, vector, kernelList, b):
+    start = time.clock()
     imageName = '{0:s}{1:s}'.format(dataDir, name)
     npImage = cv2.imread(imageName)
     npImage = np.divide(npImage, vector)
@@ -178,13 +197,14 @@ def preprocessImgConvolution(name, dataDir, vector, kernelList, b):
         #convolvedFeatures = np.empty(shape = (shrunkShape[0], shrunkShape[1], b.shape[0]))
         for ii in range(b.shape[0]):
             kernel = np.reshape(kernelList[:, ii, i], (patch_shape[0], patch_shape[1]))
-            #convolvedFeatures[:, :, ii] = signal.fftconvolve(npImage[:,:,i], np.flipud(np.fliplr(kernel)), mode ='valid') + b[ii, i]
+            #convolvedFeatures[:, :, ii] = signal.fftconvolve(npImage[:,:,i], kernel, mode ='valid') + b[ii, i]
             convolvedFeatures[:, :, ii] = nd.convolve(npImage[:,:,i], np.flipud(np.fliplr(kernel)), mode='wrap') + b[ii, i]
         convolvedFeatures = sigmoid(convolvedFeatures)
         convolvedFeatures = np.reshape(convolvedFeatures, (npImage.shape[0] * npImage.shape[1], b.shape[0]))
+        #convolvedFeatures = np.reshape(convolvedFeatures, (shrunkShape[0] * shrunkShape[1], kernelList.shape[1]))
         features3Channels[0,:,i] = np.mean(convolvedFeatures, axis = 0)
         features3Channels[1,:,i] = np.var(convolvedFeatures, axis = 0)
-        #print(time.clock() - start)
+        print(time.clock() - start)
     return(features3Channels.flatten())
 
 
@@ -200,8 +220,64 @@ def preprocessImgConvolution(name, dataDir, vector, kernelList, b):
         #convolvedFeatures = convolvedFeatures.flatten()
         #features3Channels[:, i] = convolvedFeatures
 
-###################################################################
+
+####################################################
+#define loading and Gabor kernel
+def preprocessImgGaborConvolution(name, shrunkShape, patch_shape, dataDir, vector, kernelList):
+    start = time.clock()
+    imageName = '{0:s}{1:s}'.format(dataDir, name)
+    npImage = cv2.imread(imageName)
+    npImage = np.divide(npImage, vector)
+    npImage = cv2.resize(npImage, (65, 65))
+    features3Channels = np.empty(shape = (2, len(kernelList), 3))
+    for i in range(npImage.shape[2]):
+        convolvedFeatures = np.empty(shape = (npImage.shape[0], npImage.shape[1], len(kernelList)))
+        #convolvedFeatures = np.empty(shape = (shrunkShape[0], shrunkShape[1], len(kernelList)))
+        for ii in range(len(kernelList)):
+            kernel = kernelList[ii]
+            #convolvedFeatures[:, :, ii] = signal.fftconvolve(npImage[:,:,i], kernel, mode ='valid')
+            convolvedFeatures[:, :, ii] = nd.convolve(npImage[:,:,i], kernel, mode='wrap')
+        convolvedFeatures = sigmoid(convolvedFeatures)
+        convolvedFeatures = np.reshape(convolvedFeatures, (npImage.shape[0] * npImage.shape[1], len(kernelList)))
+        #convolvedFeatures = np.reshape(convolvedFeatures, (shrunkShape[0] * shrunkShape[1], len(kernelList)))
+        features3Channels[0,:,i] = np.mean(convolvedFeatures, axis = 0)
+        features3Channels[1,:,i] = np.var(convolvedFeatures, axis = 0)
+        print(time.clock() - start)
+    return(features3Channels.flatten())
+
 #################################################################
+# Compute the Canny filter for two values of sigma
+def preprocessImgCanny(name, sigma, dataDir, vector):
+    start = time.clock()
+    imageName = '{0:s}{1:s}'.format(dataDir, name)
+    npImage = cv2.imread(imageName)
+    npImage = np.divide(npImage, vector)
+    npImage = cv2.resize(npImage, (65, 65))
+    features3Channels = np.empty(shape = (npImage.shape[0], npImage.shape[1], 3))
+    for i in range(npImage.shape[2]):
+        features3Channels[:,:,i] = filter.canny(npImage[:,:,i], sigma=sigma)
+        print(time.clock() - start)
+    return(features3Channels.flatten())
+
+#################################################################
+#Create the matrix canny filter
+indexesImTrain = np.random.permutation(m)
+indexesImTest = np.random.permutation(mTest)
+testIndexes = range(m, m + mTest)
+#Sparse Matrix of images with canny filter
+cannyMatrix = lil_matrix((len(indexesImTrain) + len(testIndexes), 65 * 65 * 3))
+#Important DO NOT forget
+vectorof255s =  np.tile(255., (424, 424, 3))
+
+someOtherNumbers = range(m)
+for i in someOtherNumbers:
+    cannyMatrix[i, :] = preprocessImgCanny(trainImageNames[i], 2, dataTrainDir, vectorof255s)
+
+someNumbers = range(mTest)
+for ii in someNumbers:
+    cannyMatrix[testIndexes[ii], :] = preprocessImgCanny(trainImageNames[ii], 2, dataTrainDir, vectorof255s)
+
+#########################################################
 #Create the matrix with convolution + pooling features
 indexesImTrain = np.random.permutation(m)
 indexesImTest = np.random.permutation(mTest)
@@ -215,11 +291,11 @@ bigMatrix = np.empty(shape=(m + mTest, 2 * n_filters * 3))
 
 someOtherNumbers = range(m)
 for i in someOtherNumbers:
-    bigMatrix[i, :] = preprocessImgConvolution(trainImageNames[i], dataTrainDir, vectorof255s, montages3Channels, b)
+    bigMatrix[i, :] = preprocessImgConvolution(trainImageNames[i], shrunkShape, dataTrainDir, vectorof255s, montages3Channels, b)
 
 someNumbers = range(mTest)
 for ii in someNumbers:
-    bigMatrix[testIndexes[ii], :] = preprocessImgConvolution(testImageNames[ii], dataTestDir, vectorof255s, montages3Channels, b)
+    bigMatrix[testIndexes[ii], :] = preprocessImgConvolution(testImageNames[ii], shrunkShape, dataTestDir, vectorof255s, montages3Channels, b)
 
 ##########################################
 #calculate number of components to retain 99% of variance
@@ -271,10 +347,10 @@ for i in range(1, len(randImgIds)+1):
 plt.show()
 
 #compute the mean for each patch and subtracting it
-bigMatrix = preprocessing.scale(bigMatrix)
+#bigMatrix = preprocessing.scale(bigMatrix)
 
-pca = RandomizedPCA(n_components = k, whiten = True)
-bigMatrix = pca.fit_transform(bigMatrix) # reduced dimension representation of the data, where k is the number of eigenvectors to keep
+#pca = RandomizedPCA(n_components = k, whiten = True)
+#bigMatrix = pca.fit_transform(bigMatrix) # reduced dimension representation of the data, where k is the number of eigenvectors to keep
 
 #display images with 99% of variance
 
